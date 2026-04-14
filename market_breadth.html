@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cơ hội - Độ rộng thị trường Việt Nam</title>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f5f0e8;
+      color: #222;
+      min-height: 100vh;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 {
+      text-align: center;
+      color: #c0392b;
+      font-size: 1.6rem;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #777;
+      font-size: 0.85rem;
+      margin-bottom: 16px;
+    }
+    #chart {
+      background: #fff8f0;
+      border: 1px solid #e0d8cc;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 24px;
+    }
+    .panel {
+      background: #fff;
+      border: 1px solid #e0d0c0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .panel h2 {
+      font-size: 1.1rem;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #f0e8dc;
+      color: #333;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th {
+      background: #f0e8dc;
+      padding: 8px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #444;
+    }
+    td { padding: 8px 12px; border-bottom: 1px solid #f5f0ea; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fdf8f4; }
+    .verdict-box {
+      padding: 14px 18px;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      border-left: 5px solid #43A047;
+      background: #fafafa;
+      color: #43A047;
+    }
+    .next-week-box {
+      padding: 12px 16px;
+      background: #f0f8ff;
+      border-left: 4px solid #1E88E5;
+      border-radius: 4px;
+      color: #1565C0;
+      font-size: 0.95rem;
+    }
+    .composite {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .gauge {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      background: conic-gradient(
+        #43A047 217.44deg,
+        #e0e0e0 217.44deg
+      );
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #222;
+      position: relative;
+    }
+    .gauge::before {
+      content: '';
+      position: absolute;
+      width: 58px; height: 58px;
+      background: #fff;
+      border-radius: 50%;
+    }
+    .gauge span { position: relative; z-index: 1; font-size: 1rem; }
+    .formula-list { font-size: 0.88rem; line-height: 2; }
+    .formula-list li { list-style: none; padding: 2px 0; }
+    .note { font-size: 0.8rem; color: #888; margin-top: 10px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+    .tag {
+      display: inline-block;
+      background: #f0e8dc;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+      color: #666;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>📊 Cơ hội - Độ rộng thị trường (50 phiên)</h1>
+  <div class="subtitle">Top 100 cổ phiếu vốn hóa lớn HOSE + HNX &nbsp;|&nbsp; Cập nhật: 14/04/2026 21:39 &nbsp;|&nbsp; 100 CP có dữ liệu</div>
+
+  <div id="chart"></div>
+
+  <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
+
+  <div class="panel">
+    <h2>🧮 Nhận định tuần tới <span class="tag">14/04/2026</span></h2>
+    <div class="composite">
+      <div class="gauge"><span>60.4</span></div>
+      <div>
+        <div style="font-size:0.8rem;color:#888;margin-bottom:4px">Điểm tổng hợp (0–100)</div>
+        <div class="verdict-box">🟢 TÍCH CỰC — Thị trường rộng, đa số CP trên MA. Có thể tiếp tục nắm giữ/mua vào.</div>
+      </div>
+    </div>
+    <div class="next-week-box">Tuần tới: Ngắn hạn chậm lại nhưng mbz50 đang cải thiện → theo dõi sát, có thể tích lũy từng bước.</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>📋 Chi tiết chỉ số</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Chỉ số</th>
+            <th style="text-align:center">Hiện tại</th>
+            <th style="text-align:center">Trạng thái</th>
+            <th style="text-align:center">Δ ngày</th>
+            <th style="text-align:center">Δ tuần</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td style="font-weight:600;color:#00BCD4">SMA-3</td>
+          <td style="text-align:center;font-weight:700">49.0%</td>
+          <td style="text-align:center"><span style="color:#FFA726;font-weight:600">Trung tính thấp</span></td>
+          <td style="text-align:center">▼ 3.00%</td>
+          <td style="text-align:center">▲ 10.00%</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;color:#FFA726">SMA-5</td>
+          <td style="text-align:center;font-weight:700">54.0%</td>
+          <td style="text-align:center"><span style="color:#66BB6A;font-weight:600">Trung tính cao</span></td>
+          <td style="text-align:center">▼ 13.00%</td>
+          <td style="text-align:center">▲ 34.00%</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;color:#43A047">SMA-10</td>
+          <td style="text-align:center;font-weight:700">82.0%</td>
+          <td style="text-align:center"><span style="color:#1E88E5;font-weight:600">Quá mua</span></td>
+          <td style="text-align:center">▲ 3.00%</td>
+          <td style="text-align:center">▲ 56.00%</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;color:#9C27B0">SMA-20</td>
+          <td style="text-align:center;font-weight:700">79.0%</td>
+          <td style="text-align:center"><span style="color:#43A047;font-weight:600">Mạnh</span></td>
+          <td style="text-align:center">▲ 2.00%</td>
+          <td style="text-align:center">▲ 44.00%</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;color:#000000">SMA-50</td>
+          <td style="text-align:center;font-weight:700">50.51%</td>
+          <td style="text-align:center"><span style="color:#66BB6A;font-weight:600">Trung tính cao</span></td>
+          <td style="text-align:center">▲ 3.04%</td>
+          <td style="text-align:center">▲ 27.28%</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;color:#E53935">SMA-200</td>
+          <td style="text-align:center;font-weight:700">47.31%</td>
+          <td style="text-align:center"><span style="color:#FFA726;font-weight:600">Trung tính thấp</span></td>
+          <td style="text-align:center">▼ 2.15%</td>
+          <td style="text-align:center">▲ 11.83%</td>
+        </tr></tbody>
+      </table>
+      <p class="note">▲/▼ = thay đổi so với phiên trước / 5 phiên trước</p>
+    </div>
+
+    <div class="panel">
+      <h2>📐 Công thức tính</h2>
+      <p style="font-size:0.88rem;margin-bottom:10px;color:#555">
+        <b>mbzN</b> = (Số cổ phiếu trong top-100 có <em>Giá đóng cửa &gt; SMA(N)</em>) ÷ Tổng cổ phiếu có đủ dữ liệu × 100
+      </p>
+      <ul class="formula-list">
+        <li><b style="color:#00BCD4">mbz03</b> = (Số CP có Giá đóng cửa &gt; SMA-3) ÷ Tổng CP có đủ dữ liệu × 100</li><li><b style="color:#FFA726">mbz05</b> = (Số CP có Giá đóng cửa &gt; SMA-5) ÷ Tổng CP có đủ dữ liệu × 100</li><li><b style="color:#43A047">mbz10</b> = (Số CP có Giá đóng cửa &gt; SMA-10) ÷ Tổng CP có đủ dữ liệu × 100</li><li><b style="color:#9C27B0">mbz20</b> = (Số CP có Giá đóng cửa &gt; SMA-20) ÷ Tổng CP có đủ dữ liệu × 100</li><li><b style="color:#000000">mbz50</b> = (Số CP có Giá đóng cửa &gt; SMA-50) ÷ Tổng CP có đủ dữ liệu × 100</li><li><b style="color:#E53935">mbz200</b> = (Số CP có Giá đóng cửa &gt; SMA-200) ÷ Tổng CP có đủ dữ liệu × 100</li>
+      </ul>
+      <p class="note" style="margin-top:14px">
+        <b>Cách đọc:</b><br>
+        &gt; 80%: Quá mua 🔵 &nbsp;|&nbsp; 60–80%: Mạnh 🟢 &nbsp;|&nbsp; 40–60%: Trung tính 🟡<br>
+        20–40%: Yếu 🟠 &nbsp;|&nbsp; &lt; 20%: Quá bán 🔴 (cơ hội mua)
+      </p>
+    </div>
+  </div>
+
+
+  <div class="panel">
+    <h2>📚 Giải thích mbz200 &gt; mbz50 hiện tại</h2>
+    <p style="font-size:0.88rem;color:#555;line-height:1.7">
+      Khi <b>mbz50 &lt; mbz200</b>, thị trường đang trong giai đoạn <em>điều chỉnh trung hạn nhưng xu hướng dài hạn còn tích cực</em>.
+      Nghĩa là nhiều CP đã phá vỡ SMA-50 (bán tháo gần đây) nhưng vẫn duy trì được trên SMA-200 (nền tảng dài hạn).
+      Đây thường là <b>vùng tích lũy tốt</b> cho nhà đầu tư dài hạn, nhưng cần chờ mbz50 hồi phục &gt;20% để xác nhận đà phục hồi bền vững.
+    </p>
+  </div>
+
+  <p class="note" style="text-align:center;padding-bottom:20px">
+    Dữ liệu: vnstock (VCI/TCBS) &nbsp;|&nbsp; Vũ trụ: 100 CP top-100 HOSE+HNX &nbsp;|&nbsp;
+    Chạy lại script để cập nhật &nbsp;|&nbsp; Cache: 4h
+  </p>
+</div>
+
+<script>
+const traces = [{"x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [54.55, 51.52, 76.77, 51.52, 54.0, 55.56, 16.16, 10.1, 26.26, 35.35, 78.79, 82.0, 67.68, 87.88, 72.73, 51.0, 47.47, 36.36, 27.27, 24.24, 31.31, 29.29, 18.18, 0.0, 32.0, 98.0, 57.0, 38.0, 40.0, 60.0, 58.0, 33.0, 21.0, 10.0, 57.0, 98.0, 57.0, 77.0, 59.0, 51.0, 74.0, 28.0, 16.0, 14.0, 39.0, 98.0, 76.0, 45.0, 52.0, 49.0], "name": "mbz03", "mode": "lines+markers", "line": {"color": "#00BCD4", "width": 2, "dash": "dot"}, "marker": {"size": 4, "color": "#00BCD4"}, "connectgaps": false}, {"x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [28.28, 44.44, 75.76, 60.61, 62.63, 63.64, 22.22, 9.09, 13.13, 12.12, 67.68, 74.75, 80.81, 90.91, 80.81, 74.75, 64.65, 44.44, 28.28, 25.25, 25.25, 24.24, 15.15, 0.0, 14.14, 61.62, 60.0, 66.0, 45.0, 49.0, 57.0, 42.0, 20.0, 7.0, 32.0, 87.0, 77.0, 92.0, 69.0, 65.0, 72.0, 40.0, 18.0, 15.0, 20.0, 95.0, 82.0, 84.0, 67.0, 54.0], "name": "mbz05", "mode": "lines+markers", "line": {"color": "#FFA726", "width": 2, "dash": "dot"}, "marker": {"size": 4, "color": "#FFA726"}, "connectgaps": false}, {"x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [23.23, 32.32, 47.47, 49.49, 65.66, 66.67, 37.37, 19.19, 17.17, 17.17, 46.46, 49.49, 56.57, 78.79, 86.87, 86.87, 86.87, 72.73, 40.4, 36.36, 32.32, 29.29, 13.13, 4.04, 8.08, 21.21, 22.22, 31.31, 33.33, 47.47, 46.46, 47.0, 38.0, 11.0, 24.0, 54.0, 52.0, 72.0, 71.0, 74.0, 80.0, 73.0, 45.0, 24.0, 26.0, 82.0, 74.0, 79.0, 79.0, 82.0], "name": "mbz10", "mode": "lines+markers", "line": {"color": "#43A047", "width": 2}, "marker": {"size": 4, "color": "#43A047"}, "connectgaps": false}, {"x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [34.34, 38.38, 40.4, 46.46, 52.53, 51.52, 37.37, 27.27, 23.23, 18.18, 37.37, 42.42, 51.52, 70.71, 68.69, 79.8, 78.79, 66.67, 46.46, 42.42, 37.37, 35.35, 27.27, 7.07, 12.12, 20.2, 18.18, 21.21, 20.2, 19.19, 21.21, 19.19, 14.14, 10.1, 17.17, 33.33, 37.37, 48.48, 52.53, 57.58, 70.71, 64.0, 49.0, 30.0, 35.0, 79.0, 72.0, 75.0, 77.0, 79.0], "name": "mbz20", "mode": "lines+markers", "line": {"color": "#9C27B0", "width": 2}, "marker": {"size": 4, "color": "#9C27B0"}, "connectgaps": false}, {"x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [41.67, 47.92, 50.0, 51.04, 54.17, 56.25, 53.12, 39.58, 41.67, 36.46, 51.04, 53.12, 54.17, 60.42, 65.62, 65.62, 66.67, 63.92, 46.39, 43.3, 41.84, 44.9, 36.73, 16.33, 20.41, 33.67, 28.57, 30.3, 26.26, 27.27, 27.27, 26.26, 22.22, 13.13, 17.17, 27.27, 24.24, 24.24, 25.25, 30.3, 36.36, 29.29, 24.24, 19.19, 23.23, 49.49, 48.48, 49.49, 47.47, 50.51], "name": "mbz50", "mode": "lines+markers", "line": {"color": "#000000", "width": 4}, "marker": {"size": 4, "color": "#000000"}, "connectgaps": false}, {"x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [63.04, 59.78, 65.22, 65.22, 68.48, 66.3, 64.13, 61.96, 58.7, 59.78, 61.96, 61.96, 61.96, 65.22, 65.22, 68.48, 67.39, 66.67, 61.29, 58.06, 58.06, 51.61, 47.31, 27.96, 34.41, 40.86, 39.78, 41.94, 38.71, 41.94, 43.01, 43.01, 35.48, 29.03, 31.18, 36.56, 35.48, 41.94, 41.94, 41.94, 45.16, 40.86, 39.78, 34.41, 35.48, 50.54, 47.31, 47.31, 49.46, 47.31], "name": "mbz200", "mode": "lines+markers", "line": {"color": "#E53935", "width": 2}, "marker": {"size": 4, "color": "#E53935"}, "connectgaps": false}];
+const layout = {
+  title: { text: 'Cơ hội - 50 phiên', font: { color: '#c0392b', size: 18 } },
+  paper_bgcolor: '#fff8f0',
+  plot_bgcolor: '#fff8f0',
+  xaxis: {
+    type: 'category',
+    tickangle: -45,
+    tickfont: { size: 10 },
+    gridcolor: '#ead8c0',
+    showgrid: true,
+  },
+  yaxis: {
+    range: [0, 105],
+    ticksuffix: '%',
+    gridcolor: '#ead8c0',
+    showgrid: true,
+  },
+  legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' },
+  hovermode: 'x unified',
+  margin: { l: 50, r: 80, t: 60, b: 120 },
+  height: 624,
+};
+const config = { responsive: true, displayModeBar: true };
+Plotly.newPlot('chart', traces, layout, config);
+
+// VNIndex chart
+const vniData = [{"type": "candlestick", "x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "open": [1837.67, 1804.15, 1822.1, 1824.1, 1807.09, 1813.87, 1789.14, 1768.77, 1769.76, 1755.83, 1768.18, 1809.01, 1818.07, 1833.9, 1862.18, 1869.49, 1861.32, 1883.12, 1876.01, 1854.28, 1803.54, 1837.34, 1801.08, 1757.73, 1664.52, 1675.87, 1716.62, 1697.72, 1701.06, 1709.38, 1718.3, 1700.77, 1698.62, 1630.11, 1626.34, 1634.15, 1661.53, 1643.89, 1646.08, 1669.57, 1713.92, 1706.15, 1700.14, 1682.09, 1677.99, 1706.59, 1750.88, 1750.86, 1738.57, 1775.41], "high": [1842.61, 1814.98, 1831.97, 1827.91, 1827.22, 1813.87, 1800.1, 1782.34, 1771.73, 1776.24, 1799.92, 1816.11, 1824.09, 1863.13, 1867.62, 1876.01, 1882.17, 1899.44, 1885.18, 1854.28, 1833.33, 1849.01, 1807.31, 1757.73, 1716.62, 1729.67, 1725.52, 1716.75, 1707.0, 1732.31, 1742.87, 1709.47, 1698.62, 1636.27, 1630.63, 1658.77, 1661.6, 1673.31, 1671.6, 1677.83, 1715.21, 1706.15, 1713.95, 1693.03, 1690.31, 1756.55, 1754.77, 1762.84, 1765.67, 1784.43], "low": [1793.13, 1797.32, 1808.47, 1777.85, 1805.22, 1780.71, 1782.18, 1754.39, 1749.87, 1741.37, 1763.96, 1804.6, 1792.91, 1833.9, 1849.6, 1857.16, 1859.04, 1863.36, 1844.25, 1808.55, 1766.86, 1806.53, 1767.84, 1650.75, 1651.29, 1675.17, 1701.59, 1688.67, 1680.7, 1708.83, 1693.36, 1677.09, 1628.62, 1586.44, 1602.92, 1629.73, 1634.55, 1640.31, 1637.58, 1663.05, 1700.18, 1684.47, 1679.79, 1669.31, 1665.36, 1706.59, 1736.3, 1747.08, 1733.18, 1765.52], "close": [1802.91, 1814.98, 1829.04, 1806.5, 1813.4, 1791.43, 1782.56, 1755.49, 1754.82, 1754.03, 1796.85, 1814.09, 1824.09, 1860.14, 1867.62, 1860.91, 1879.64, 1880.33, 1846.1, 1813.14, 1818.27, 1808.51, 1767.84, 1652.79, 1676.73, 1728.34, 1709.61, 1696.24, 1693.21, 1710.29, 1713.83, 1699.13, 1647.81, 1591.17, 1614.77, 1658.19, 1644.63, 1672.8, 1662.54, 1674.49, 1702.93, 1694.82, 1684.04, 1674.99, 1677.54, 1756.55, 1736.68, 1750.0, 1758.96, 1775.65], "name": "VNINDEX", "increasing": {"line": {"color": "#43A047"}, "fillcolor": "#43A047"}, "decreasing": {"line": {"color": "#E53935"}, "fillcolor": "#E53935"}}];
+const vniVol  = [{"type": "bar", "x": ["28-01-2026", "29-01-2026", "30-01-2026", "02-02-2026", "03-02-2026", "04-02-2026", "05-02-2026", "06-02-2026", "09-02-2026", "10-02-2026", "11-02-2026", "12-02-2026", "13-02-2026", "23-02-2026", "24-02-2026", "25-02-2026", "26-02-2026", "27-02-2026", "02-03-2026", "03-03-2026", "04-03-2026", "05-03-2026", "06-03-2026", "09-03-2026", "10-03-2026", "11-03-2026", "12-03-2026", "13-03-2026", "16-03-2026", "17-03-2026", "18-03-2026", "19-03-2026", "20-03-2026", "23-03-2026", "24-03-2026", "25-03-2026", "26-03-2026", "27-03-2026", "30-03-2026", "31-03-2026", "01-04-2026", "02-04-2026", "03-04-2026", "06-04-2026", "07-04-2026", "08-04-2026", "09-04-2026", "10-04-2026", "13-04-2026", "14-04-2026"], "y": [1046.9, 723.2, 877.8, 973.9, 986.0, 1053.9, 739.9, 1133.4, 726.4, 920.7, 1146.8, 501.0, 608.6, 756.9, 1002.1, 1156.5, 891.0, 927.7, 1548.1, 1303.7, 1574.3, 1126.6, 1030.3, 1380.8, 1537.5, 997.3, 956.7, 1023.1, 873.5, 887.5, 840.3, 881.1, 961.2, 1103.1, 771.7, 892.2, 806.7, 940.1, 824.7, 929.7, 943.3, 888.2, 772.3, 668.0, 612.5, 1256.7, 1063.9, 961.8, 880.4, 889.4], "name": "Volume (tri\u1ec7u)", "marker": {"color": ["#E53935", "#43A047", "#43A047", "#E53935", "#43A047", "#E53935", "#E53935", "#E53935", "#E53935", "#E53935", "#43A047", "#43A047", "#43A047", "#43A047", "#43A047", "#E53935", "#43A047", "#E53935", "#E53935", "#E53935", "#43A047", "#E53935", "#E53935", "#E53935", "#43A047", "#43A047", "#E53935", "#E53935", "#E53935", "#43A047", "#E53935", "#E53935", "#E53935", "#E53935", "#E53935", "#43A047", "#E53935", "#43A047", "#43A047", "#43A047", "#E53935", "#E53935", "#E53935", "#E53935", "#E53935", "#43A047", "#E53935", "#E53935", "#43A047", "#43A047"], "opacity": 0.6}, "xaxis": "x", "yaxis": "y2"}];
+if (vniData && vniVol) {
+  const vniLayout = {
+    title: { text: 'VN-Index - 50 phiên', font: { color: '#c0392b', size: 18 } },
+    paper_bgcolor: '#fff8f0',
+    plot_bgcolor: '#fff8f0',
+    xaxis: {
+      type: 'category',
+      tickangle: -45,
+      tickfont: { size: 10 },
+      gridcolor: '#ead8c0',
+      rangeslider: { visible: false },
+      anchor: 'y2',
+      domain: [0, 1],
+    },
+    yaxis: {
+      title: 'Điểm',
+      gridcolor: '#ead8c0',
+      domain: [0.30, 1],
+    },
+    yaxis2: {
+      title: 'KL (triệu)',
+      showgrid: false,
+      domain: [0, 0.25],
+    },
+    legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center' },
+    hovermode: 'x unified',
+    margin: { l: 60, r: 60, t: 60, b: 100 },
+    height: 624,
+  };
+  Plotly.newPlot('vnindex-chart', [...vniData, ...vniVol], vniLayout, config);
+}
+</script>
+</body>
+</html>
