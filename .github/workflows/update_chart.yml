@@ -2,8 +2,8 @@ name: Update Market Breadth Chart
 
 on:
   schedule:
-    # 10:35 UTC = 17:35 Vietnam time (ICT = UTC+7), Mon–Fri
-    - cron: '35 10 * * 1-5'
+    # 08:00 UTC = 15:00 Vietnam time (ICT = UTC+7), Mon–Fri
+    - cron: '0 8 * * 1-5'
   workflow_dispatch:   # allow manual "Run workflow" from GitHub UI
 
 jobs:
