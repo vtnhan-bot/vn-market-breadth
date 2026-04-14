@@ -31,9 +31,10 @@ OUTPUT_HTML = SCRIPT_DIR / "market_breadth.html"
 MA_PERIODS      = [3, 5, 10, 20, 50, 200]
 SESSIONS_SHOW   = 50
 FETCH_DAYS_BACK = 420   # Need 200-day SMA + 50 sessions buffer + weekends
-MAX_WORKERS     = 3
+IS_CI           = bool(os.environ.get("GITHUB_ACTIONS"))
+MAX_WORKERS     = 1 if IS_CI else 3
 CACHE_HOURS     = 4     # Re-fetch if cache older than N hours
-REQUEST_DELAY   = 0.3   # seconds between requests to avoid rate-limit
+REQUEST_DELAY   = 3.5 if IS_CI else 0.3   # VCI guest limit: 20 req/min
 
 MA_COLORS = {
     3:   "#00BCD4",   # cyan
@@ -146,7 +147,7 @@ def fetch_all(tickers, start_date, end_date):
             sys.stdout.flush()
 
     print()
-    if failed:
+    if failed and not IS_CI:
         log(f"First pass failed ({len(failed)}): {', '.join(failed)}")
         log("Retrying failed tickers sequentially (may take ~1 min)...")
         still_failed = []
@@ -163,6 +164,8 @@ def fetch_all(tickers, start_date, end_date):
         print()
         if still_failed:
             log(f"Permanently failed ({len(still_failed)}): {', '.join(still_failed)}")
+    elif failed:
+        log(f"Failed ({len(failed)}) in CI mode (no retry): {', '.join(failed)}")
 
     log(f"Successfully fetched data for {len(price_data)} tickers")
     return price_data
