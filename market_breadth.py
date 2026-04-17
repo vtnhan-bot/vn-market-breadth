@@ -34,7 +34,7 @@ FETCH_DAYS_BACK = 420   # Need 200-day SMA + 50 sessions buffer + weekends
 IS_CI           = bool(os.environ.get("GITHUB_ACTIONS"))
 MAX_WORKERS     = 1 if IS_CI else 3
 CACHE_HOURS     = 4     # Re-fetch if cache older than N hours
-REQUEST_DELAY   = 3.5 if IS_CI else 0.3   # VCI guest limit: 20 req/min
+REQUEST_DELAY   = 3.5 if IS_CI else 1.0   # KBS rate limit: ~3 req/s safe
 
 MA_COLORS = {
     3:   "#00BCD4",   # cyan
@@ -106,9 +106,10 @@ def fetch_one(ticker, start_date, end_date):
             return ticker, df, "cache"
 
     time.sleep(REQUEST_DELAY)
+    last_err = None
     try:
         from vnstock import Vnstock
-        for source in ["VCI", "TCBS"]:
+        for source in ["KBS", "MSN", "VCI"]:
             try:
                 s = Vnstock().stock(symbol=ticker, source=source)
                 df = s.quote.history(start=start_date, end=end_date, interval="1D")
@@ -119,12 +120,13 @@ def fetch_one(ticker, start_date, end_date):
                     save_cache(ticker, df)
                     return ticker, df, source
                 time.sleep(0.5)
-            except Exception:
+            except Exception as e:
+                last_err = e
                 time.sleep(1.0)
                 continue
     except Exception as e:
-        pass
-    return ticker, None, "failed"
+        last_err = e
+    return ticker, None, f"failed({last_err})"
 
 def fetch_all(tickers, start_date, end_date):
     price_data = {}
@@ -142,7 +144,7 @@ def fetch_all(tickers, start_date, end_date):
                 status = f"OK ({source}, {len(df)} rows)"
             else:
                 failed.append(ticker)
-                status = "FAILED"
+                status = source  # source contains "failed(...)" with error msg
             sys.stdout.write(f"\r  Fetched {done}/{total} | {ticker}: {status}        ")
             sys.stdout.flush()
 
@@ -301,7 +303,7 @@ def fetch_vnindex(start_date, end_date):
             pass
     try:
         from vnstock import Vnstock
-        s = Vnstock().stock(symbol="VNINDEX", source="VCI")
+        s = Vnstock().stock(symbol="VNINDEX", source="KBS")
         df = s.quote.history(start=start_date, end=end_date, interval="1D")
         df["time"] = pd.to_datetime(df["time"]).dt.date
         df = df.sort_values("time").reset_index(drop=True)
