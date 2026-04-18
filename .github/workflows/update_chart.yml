@@ -10,6 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      id-token: write   # required for Workload Identity Federation
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -32,10 +36,16 @@ jobs:
       - name: Generate chart HTML
         run: python market_breadth.py --no-browser
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          publish_branch: gh-pages
-          exclude_assets: '.github,cache,__pycache__,*.py,*.bat,*.pkl,*.csv,requirements.txt'
+          workload_identity_provider: 'projects/746287134716/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-deploy@project-feb6df0e-9749-4925-b4e.iam.gserviceaccount.com'
+
+      - name: Upload to Cloud Storage
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Copy HTML to bucket
+        run: |
+          gcloud storage cp market_breadth.html gs://vn-market-breadth/index.html \
+            --cache-control="no-cache, no-store, must-revalidate"
