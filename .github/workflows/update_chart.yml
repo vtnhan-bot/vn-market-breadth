@@ -1,10 +1,9 @@
-name: Update Market Breadth Chart
+name: Build & Push Docker Image
 
 on:
-  schedule:
-    # 08:00 UTC = 15:00 Vietnam time (ICT = UTC+7), Mon–Fri
-    - cron: '0 8 * * 1-5'
-  workflow_dispatch:   # allow manual "Run workflow" from GitHub UI
+  push:
+    branches: [master]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,34 +17,25 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: pip-
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Generate chart HTML
-        run: python market_breadth.py --no-browser
-
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: 'projects/746287134716/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
           service_account: 'github-deploy@project-feb6df0e-9749-4925-b4e.iam.gserviceaccount.com'
 
-      - name: Upload to Cloud Storage
+      - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Copy HTML to bucket
+      - name: Build and push Docker image via Cloud Build
         run: |
-          gcloud storage cp market_breadth.html gs://vn-market-breadth/index.html \
-            --cache-control="no-cache, no-store, must-revalidate"
+          gcloud builds submit \
+            --tag asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest \
+            --region asia-southeast1 \
+            --project project-feb6df0e-9749-4925-b4e
+
+      - name: Update Cloud Run Job image
+        run: |
+          gcloud run jobs update market-breadth-job \
+            --image asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest \
+            --region asia-southeast1 \
+            --project project-feb6df0e-9749-4925-b4e

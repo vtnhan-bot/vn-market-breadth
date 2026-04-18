@@ -178,6 +178,7 @@ def calculate_breadth(price_data, sessions_show=50):
     frames = []
     for ticker, df in price_data.items():
         tmp = df.set_index("time")["close"].rename(ticker)
+        tmp = tmp[~tmp.index.duplicated(keep="last")]
         frames.append(tmp)
 
     prices = pd.concat(frames, axis=1).sort_index()
