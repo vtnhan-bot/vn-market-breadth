@@ -38,7 +38,7 @@ DATA_DIR = SCRIPT_DIR / "data"
 ARCHIVE_DIR = DATA_DIR / "archive"
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 
-API_SOURCES = ["SSI", "KBS", "VCI", "VND"]
+API_SOURCES = ["KBS", "VCI", "MSN", "FMP"]  # vnstock 3.5.0+ dropped SSI/VND; community-tier limit is 60 req/min so 1.1s spacing fits
 API_CALL_DELAY_SECONDS = 1.1
 ERROR_BACKOFF_SECONDS = 60
 FETCH_DAYS_BACK = 420
