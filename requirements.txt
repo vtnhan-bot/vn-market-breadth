@@ -1,4 +1,6 @@
 vnstock==3.5.0
+yfinance
 pandas
 numpy
 openpyxl
+python-dotenv

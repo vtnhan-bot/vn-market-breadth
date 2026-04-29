@@ -1,0 +1,173 @@
+﻿ticker,company_name,exchange,market_cap,industry,locked_at,lock_rule
+ACB,Ngân hàng Thương mại Cổ phần Á Châu,HOSE,122000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+ACG,Công ty Cổ phần Gỗ An Cường,HOSE,5120000000000.0,SX Phụ trợ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+AGR,Công ty Cổ phần Chứng khoán AGRIBANK,HOSE,3330000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+ANV,Công ty Cổ phần Nam Việt,HOSE,6650000000000.0,Chế biến Thủy sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+AST,Công ty Cổ phần Dịch vụ Hàng không Taseco,HOSE,3100000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BAB,Ngân hàng Thương mại Cổ phần Bắc Á,HNX,12100000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BAF,Công ty Cổ phần Nông nghiệp BAF Việt Nam,HOSE,11100000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BCM,Tập đoàn Đầu tư và Phát triển Công nghiệp Becamex - CTCP,HOSE,57500000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BFC,Công ty Cổ phần Phân bón Bình Điền,HOSE,3730000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BHN,Tổng Công ty Cổ phần Bia - Rượu - Nước giải khát Hà Nội,HOSE,6900000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BIC,Tổng Công ty Cổ phần Bảo hiểm Ngân hàng Đầu tư và Phát triển Việt Nam,HOSE,4890000000000.0,Bảo hiểm,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BID,Ngân hàng Thương mại Cổ phần Đầu tư và Phát triển Việt Nam,HOSE,284000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BMP,Công ty Cổ phần Nhựa Bình Minh,HOSE,12400000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BSI,Công ty Cổ phần Chứng khoán BIDV,HOSE,8870000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BSR,Công ty Cổ phần Lọc Hóa dầu Bình Sơn,HOSE,131000000000000.0,SX Phụ trợ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BVH,Tập đoàn Bảo Việt,HOSE,52900000000000.0,Bảo hiểm,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+BWE,Công ty Cổ phần - Tổng công ty Nước - Môi trường Bình Dương,HOSE,9610000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CDN,Công ty Cổ phần Cảng Đà Nẵng,HNX,3070000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CEO,Công ty Cổ phần Tập đoàn C.E.O,HNX,9590000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CII,Công ty Cổ phần Đầu tư Hạ tầng Kỹ thuật Thành phố Hồ Chí Minh,HOSE,12500000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CMG,Công ty Cổ phần Tập đoàn Công nghệ CMC,HOSE,6620000000000.0,Công nghệ và thông tin,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CRE,Công ty Cổ phần Bất động sản Thế Kỷ,HOSE,3520000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CRV,Công ty Cổ phần Tập đoàn Bất động sản CRV,HOSE,20100000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CTD,Công ty Cổ phần Xây dựng Coteccons,HOSE,8840000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CTG,Ngân hàng Thương mại Cổ phần Công thương Việt Nam,HOSE,271000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CTR,Tổng Công ty Cổ phần Công trình Viettel,HOSE,9850000000000.0,Công nghệ và thông tin,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+CTS,Công ty Cổ phần Chứng khoán Vietinbank,HOSE,5720000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DBC,Công ty Cổ phần Tập đoàn Dabaco Việt Nam,HOSE,8890000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DBD,Công ty Cổ phần Dược - Trang thiết bị y tế Bình Định (BIDIPHAR),HOSE,4750000000000.0,Chăm sóc sức khỏe,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DCM,Công ty Cổ phần - Tổng Công ty Phân bón Dầu Khí Cà Mau,HOSE,23700000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DGC,Công ty Cổ phần Tập đoàn Hóa chất Đức Giang,HOSE,20200000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DGW,Công ty Cổ phần Thế Giới Số,HOSE,10100000000000.0,Bán buôn,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DHC,Công ty Cổ phần Đông Hải Bến Tre,HOSE,3550000000000.0,SX Phụ trợ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DHG,Công ty Cổ phần Dược Hậu Giang,HOSE,13000000000000.0,Chăm sóc sức khỏe,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DHT,Công ty Cổ phần Dược phẩm Hà Tây,HNX,6430000000000.0,Chăm sóc sức khỏe,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DIG,Tổng Công ty Cổ phần Đầu tư Phát triển Xây dựng,HOSE,11300000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DPG,Công ty Cổ phần Tập đoàn Đạt Phương,HOSE,5040000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DPM,Tổng Công ty Phân bón và Hóa chất Dầu khí - Công ty Cổ phần,HOSE,19200000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DPR,Công ty Cổ phần Cao su Đồng Phú,HOSE,3540000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DSC,Công ty Cổ phần Chứng khoán DSC,HOSE,3580000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DSE,Công ty Cổ phần Chứng khoán DNSE,HOSE,10100000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DTK,Tổng Công ty Điện lực TKV - Công ty Cổ phần,HNX,7720000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DXG,Công ty Cổ phần Tập đoàn Đất Xanh,HOSE,16400000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+DXS,Công ty Cổ phần Dịch vụ Bất động sản Đất Xanh,HOSE,4110000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+EIB,Ngân hàng Thương mại Cổ phần Xuất nhập khẩu Việt Nam,HOSE,42900000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+EVF,Công ty Tài chính Tổng hợp Cổ phần Điện Lực,HOSE,10500000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+FPT,Công ty Cổ phần FPT,HOSE,128000000000000.0,Công nghệ và thông tin,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+FRT,Công ty Cổ phần Bán lẻ Kỹ thuật số FPT,HOSE,25700000000000.0,Bán lẻ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+FTS,Công ty Cổ phần Chứng khoán FPT,HOSE,9440000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GAS,Tổng Công ty Khí Việt Nam - Công ty Cổ phần,HOSE,190000000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GEE,Công ty Cổ phần Điện lực Gelex,HOSE,68800000000000.0,Thiết bị điện,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GEG,Công ty Cổ phần Điện Gia Lai,HOSE,5370000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GEL,Công ty Cổ phần Hạ tầng GELEX,HOSE,29300000000000.0,Bán buôn,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GEX,Công ty Cổ phần Tập đoàn Gelex,HOSE,36400000000000.0,Thiết bị điện,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GMD,Công ty Cổ phần Gemadept,HOSE,31600000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+GVR,Tập đoàn Công nghiệp Cao su Việt Nam - Công ty Cổ phần,HOSE,131000000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HAG,Công ty Cổ phần Hoàng Anh Gia Lai,HOSE,20700000000000.0,Nông - Lâm - Ngư,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HAH,Công ty Cổ phần Vận tải và Xếp dỡ Hải An,HOSE,9020000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HCM,Công ty Cổ phần Chứng khoán Thành phố Hồ Chí Minh,HOSE,29500000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HDB,Ngân hàng Thương mại Cổ phần Phát Triển Thành phố Hồ Chí Minh,HOSE,134000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HDC,Công ty Cổ phần Phát triển Nhà Bà Rịa Vũng Tàu,HOSE,3700000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HDG,Công ty Cổ phần Tập đoàn Hà Đô,HOSE,10300000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HHS,Công ty Cổ phần Đầu tư Dịch vụ Hoàng Huy,HOSE,5720000000000.0,Bán buôn,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HHV,Công ty Cổ phần Đầu tư Hạ tầng Giao thông Đèo Cả,HOSE,6890000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HNA,Công ty Cổ phần Thủy điện Hủa Na,HOSE,5180000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HPA,Công ty Cổ phần Phát triển Nông nghiệp Hoà Phát,HOSE,10700000000000.0,Nông - Lâm - Ngư,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HPG,Công ty Cổ phần Tập đoàn Hòa Phát,HOSE,219000000000000.0,Vật liệu xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HSG,Công ty Cổ phần Tập đoàn Hoa Sen,HOSE,10000000000000.0,Vật liệu xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HT1,Công ty Cổ phần Xi măng VICEM Hà Tiên,HOSE,5840000000000.0,Vật liệu xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HUT,Công ty Cổ phần Tasco,HNX,17600000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+HVN,Tổng Công ty Hàng không Việt Nam - CTCP,HOSE,70000000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+IDC,Tổng Công ty IDICO - CTCP,HNX,17600000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+IJC,Công ty Cổ phần Phát triển Hạ tầng Kỹ thuật,HOSE,6480000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+IMP,Công ty Cổ phần Dược phẩm Imexpharm,HOSE,8490000000000.0,Chăm sóc sức khỏe,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+IPA,Công ty Cổ phần Tập đoàn Đầu tư I.P.A,HNX,3380000000000.0,Tài chính khác,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+KBC,Tổng Công ty Phát triển Đô thị Kinh Bắc - CTCP,HOSE,32200000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+KDC,Công ty Cổ phần Tập đoàn KIDO,HOSE,13800000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+KDH,Công ty Cổ phần Đầu tư và Kinh doanh nhà Khang Điền,HOSE,28800000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+KLB,Ngân hàng Thương mại Cổ phần Kiên Long,HOSE,8150000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+KOS,Công ty Cổ phần KOSY,HOSE,8360000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+LGC,Công ty Cổ phần Đầu tư Cầu đường CII,HOSE,12900000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+LPB,Ngân hàng Thương mại Cổ phần Lộc Phát Việt Nam,HOSE,141000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MBB,Ngân hàng Thương mại Cổ phần Quân đội,HOSE,212000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MBS,Công ty Cổ phần Chứng khoán MB,HNX,13300000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MCH,Công ty Cổ phần Hàng Tiêu Dùng MaSan,HOSE,181000000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MCM,Công ty Cổ phần Giống bò sữa Mộc Châu,HOSE,3060000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MIG,Tổng Công ty Cổ phần Bảo hiểm Quân đội,HOSE,3740000000000.0,Bảo hiểm,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MSB,Ngân hàng Thương mại Cổ phần Hàng Hải Việt Nam,HOSE,38800000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MSH,Công ty Cổ phần May Sông Hồng,HOSE,4290000000000.0,SX Hàng gia dụng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MSN,Công ty Cổ phần Tập đoàn Masan,HOSE,114000000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+MWG,Công ty Cổ phần Đầu tư Thế Giới Di Động,HOSE,126000000000000.0,Bán lẻ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NAB,Ngân hàng Thương mại Cổ phần Nam Á,HOSE,23200000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NAF,Công ty Cổ phần Nafoods Group,HOSE,3100000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NKG,Công ty Cổ phần Thép Nam Kim,HOSE,6490000000000.0,Vật liệu xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NLG,Công ty Cổ phần Đầu tư Nam Long,HOSE,13700000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NT2,Công ty Cổ phần Điện lực Dầu khí Nhơn Trạch 2,HOSE,7440000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NTC,Công ty Cổ phần Khu Công nghiệp Nam Tân Uyên,HOSE,3400000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NTP,Công ty Cổ phần Nhựa Thiếu niên Tiền Phong,HNX,10500000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NVB,Ngân hàng Thương mại Cổ phần Quốc Dân,HNX,21200000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+NVL,Công ty Cổ phần Tập đoàn Đầu tư Địa ốc No Va,HOSE,39500000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+OCB,Ngân hàng Thương mại Cổ phần Phương Đông,HOSE,30500000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+ORS,Công ty Cổ phần Chứng khoán Tiên Phong,HOSE,8360000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PAN,Công ty Cổ phần Tập đoàn PAN,HOSE,7060000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PC1,Công ty Cổ phần Tập đoàn PC1,HOSE,10800000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PDN,Công ty Cổ phần Cảng Đồng Nai,HOSE,5980000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PDR,Công ty Cổ phần Phát triển Bất động sản Phát Đạt,HOSE,16100000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PET,Tổng Công ty Cổ phần Dịch vụ Tổng hợp Dầu khí,HOSE,5030000000000.0,Bán buôn,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PGV,Tổng Công ty Phát điện 3 - Công ty Cổ phần,HOSE,26500000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PHR,Công ty Cổ phần Cao su Phước Hòa,HOSE,8400000000000.0,SX Nhựa - Hóa chất,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PLX,Tập đoàn Xăng dầu Việt Nam,HOSE,50900000000000.0,Bán buôn,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PNJ,Công ty Cổ phần Vàng bạc Đá quý Phú Nhuận,HOSE,38200000000000.0,Bán lẻ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+POW,Tổng Công ty Điện lực Dầu khí Việt Nam - CTCP,HOSE,40200000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PPC,Công ty Cổ phần Nhiệt điện Phả Lại,HOSE,3290000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PTB,Công ty Cổ phần Phú Tài,HOSE,3960000000000.0,SX Phụ trợ,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PTI,Tổng Công ty Cổ phần Bảo hiểm Bưu điện,HNX,3530000000000.0,Bảo hiểm,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PVD,Tổng Công ty Cổ phần Khoan và Dịch vụ khoan Dầu khí,HOSE,18100000000000.0,Khai khoáng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PVI,Công ty Cổ phần PVI,HNX,18000000000000.0,Bảo hiểm,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PVS,Tổng Công ty Cổ phần Dịch vụ Kỹ thuật Dầu khí Việt Nam,HNX,19700000000000.0,Khai khoáng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+PVT,Tổng Công ty Cổ phần Vận tải Dầu khí,HOSE,10400000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+QCG,Công ty Cổ phần Quốc Cường Gia Lai,HOSE,3840000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+REE,Công ty Cổ phần Cơ điện Lạnh,HOSE,35100000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SAB,Tổng Công ty Cổ phần Bia - Rượu - Nước Giải khát Sài Gòn,HOSE,57900000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SBT,Công ty Cổ phần Thành Thành Công - Biên Hòa,HOSE,17600000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SCG,Công ty Cổ phần Tập đoàn Xây dựng SCG,HNX,5910000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SCS,Công ty Cổ phần Dịch vụ Hàng hóa Sài Gòn,HOSE,5120000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SHB,Ngân hàng Thương mại Cổ phần Sài Gòn – Hà Nội,HOSE,69600000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SHP,Công ty Cổ phần Thủy điện Miền Nam,HOSE,3460000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SHS,Công ty Cổ phần Chứng khoán Sài Gòn - Hà Nội,HNX,15700000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SIP,Công ty Cổ phần Đầu tư Sài Gòn VRG,HOSE,14600000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SJS,Công ty Cổ phần SJ Group,HOSE,16300000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SSB,Ngân hàng Thương mại Cổ phần Đông Nam Á,HOSE,47800000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SSI,Công ty Cổ phần Chứng khoán SSI,HOSE,70600000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+STB,Ngân hàng Thương mại Cổ phần Sài Gòn Thương Tín,HOSE,128000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+STG,Công ty Cổ phần Kho Vận Miền Nam,HOSE,3550000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+SZC,Công ty Cổ phần Sonadezi Châu Đức,HOSE,5100000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TAL,Công Ty Cổ Phần Đầu Tư Bất Động Sản Taseco,HOSE,15900000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TCB,Ngân hàng Thương mại Cổ phần Kỹ thương Việt Nam,HOSE,232000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TCH,Công ty Cổ phần Đầu tư Dịch vụ Tài chính Hoàng Huy,HOSE,15200000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TCX,Công ty Cổ phần Chứng khoán Kỹ Thương,HOSE,118000000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TDM,Công ty Cổ phần Nước Thủ Dầu Một,HOSE,6380000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TMS,Công ty Cổ phần Transimex,HOSE,7010000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TPB,Ngân hàng Thương mại Cổ phần Tiên Phong,HOSE,45100000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TRA,Công ty Cổ phần Traphaco,HOSE,3180000000000.0,Chăm sóc sức khỏe,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+TVS,Công ty Cổ phần Chứng khoán Thiên Việt,HOSE,3090000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VAB,Ngân hàng Thương mại Cổ phần Việt Á,HOSE,8410000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VC3,Công ty Cổ phần Tập đoàn Nam Mê Kông,HNX,3640000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VCB,Ngân hàng Thương mại Cổ phần Ngoại thương Việt Nam,HOSE,498000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VCF,Công ty Cổ phần VinaCafé Biên Hòa,HOSE,8110000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VCG,Tổng Công ty Cổ phần Xuất nhập khẩu và Xây dựng Việt Nam,HOSE,14200000000000.0,Xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VCI,Công ty Cổ phần Chứng khoán Vietcap,HOSE,30800000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VCK,Công ty Cổ phần Chứng Khoán VPS,HOSE,51700000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VCS,Công ty Cổ phần VICOSTONE,HNX,6380000000000.0,Vật liệu xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VDS,Công ty Cổ phần Chứng khoán Rồng Việt,HOSE,3980000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VGC,Tổng Công ty Viglacera - Công ty Cổ phần,HOSE,19900000000000.0,Vật liệu xây dựng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VHC,Công ty Cổ phần Vĩnh Hoàn,HOSE,14000000000000.0,Chế biến Thủy sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VHM,Công ty Cổ phần Vinhomes,HOSE,599000000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VIB,Ngân hàng Thương mại Cổ phần Quốc tế Việt Nam,HOSE,58500000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VIC,Tập đoàn Vingroup - Công ty CP,HOSE,1490000000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VIF,Tổng Công ty Lâm nghiệp Việt Nam - Công ty Cổ phần,HNX,5430000000000.0,Nông - Lâm - Ngư,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VIX,Công ty Cổ phần Chứng khoán VIX,HOSE,26100000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VJC,Công ty Cổ phần Hàng không Vietjet,HOSE,104000000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VND,Công ty Cổ phần Chứng khoán VNDIRECT,HOSE,25300000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VNM,Công ty Cổ phần Sữa Việt Nam,HOSE,129000000000000.0,Thực phẩm - Đồ uống,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VPB,Ngân hàng Thương mại Cổ phần Việt Nam Thịnh Vượng,HOSE,219000000000000.0,Ngân hàng,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VPI,Công ty Cổ phần Phát triển Bất động sản Văn Phú,HOSE,19500000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VPL,Công ty Cổ phần Vinpearl,HOSE,150000000000000.0,"Dịch vụ lưu trú, ăn uống, giải trí",2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VPX,Công ty Cổ phần Chứng khoán VPBank,HOSE,52800000000000.0,Chứng khoán,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VRE,Công ty Cổ phần Vincom Retail,HOSE,68200000000000.0,Bất động sản,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VSC,Công ty Cổ phần Container Việt Nam,HOSE,8780000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VSH,Công ty Cổ phần Thủy điện Vĩnh Sơn - Sông Hinh,HOSE,10200000000000.0,Tiện ích,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VTP,Tổng Công ty Cổ phần Bưu chính Viettel,HOSE,8490000000000.0,Vận tải - kho bãi,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe
+VGI,,,,Chưa phân ngành,2026-04-21,Synced from institutional_universe_3T.csv via --sync-universe

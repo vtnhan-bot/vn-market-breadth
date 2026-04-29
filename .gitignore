@@ -2,3 +2,25 @@ cache/
 __pycache__/
 *.pkl
 *.pyc
+.env
+.claude/
+
+# Runtime outputs (regenerated each pipeline run)
+data/
+logs/
+audit_logs/
+market_breadth.html
+rs_matrix_3T.csv
+rs_matrix_data.csv
+rs_data_all_tickers.json
+rs_heatmap_data_complete.js
+
+# Local dev tools (not needed in cloud)
+*.bat
+*.ps1
+
+# IDE / editor noise
+.vscode/
+
+# Bootstrap CSVs we WANT committed (override gitignore patterns)
+!rs_fixed_tickers.csv
