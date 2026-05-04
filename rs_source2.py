@@ -18,8 +18,7 @@ from vnstock import Company, Listing, Vnstock
 SCRIPT_DIR = Path(__file__).resolve().parent
 CACHE_DIR = SCRIPT_DIR / "cache"
 DATA_DIR = SCRIPT_DIR / "data"
-RS_UNIVERSE_PATH = SCRIPT_DIR / "rs_universe.csv"
-RS_FIXED_TICKERS_PATH = SCRIPT_DIR / "rs_fixed_tickers.csv"
+RS_FIXED_TICKERS_PATH = SCRIPT_DIR / "rs_fixed_tickers.csv"  # unified canonical universe
 RS_MATRIX_DATA_PATH = SCRIPT_DIR / "rs_matrix_data.csv"
 RS_METADATA_CACHE_PATH = CACHE_DIR / "rs_company_overview_cache.csv"
 RS_HISTORY_CACHE_DIR = CACHE_DIR / "rs_history"

@@ -1636,7 +1636,7 @@ def main():
             import pre_breakout
             from _patch_pre_breakout import build_panel, PANEL_CSS, PANEL_MARKER, PANEL_END
             log("Computing pre-breakout signals ...")
-            pb = pre_breakout.compute(combined_path, SCRIPT_DIR / "rs_universe.csv")
+            pb = pre_breakout.compute(combined_path, SCRIPT_DIR / "rs_fixed_tickers.csv")
             log(
                 f"Pre-breakout: layer_a={len(pb.layer_a)} watch_a={len(pb.layer_a_watch)} "
                 f"layer_b={len(pb.layer_b)} watch_b={len(pb.layer_b_watch)} both={len(pb.both)} "

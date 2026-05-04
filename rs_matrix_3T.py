@@ -234,12 +234,21 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
         method="average",
         pct=True,
     )
-    matrix_df["rs_rating"] = ((matrix_df["rs_pct"] * 98) + 1).round().clip(1, 99).astype(int)
     matrix_df["weighted_momentum_pct"] = matrix_df.groupby("session_date")[
         "weighted_momentum_score"
     ].rank(
         method="average",
         pct=True,
+    )
+    # Blend RS (relative performance) with momentum: 30% RS + 70% momentum
+    matrix_df["rs_pct_blended"] = (
+        0.30 * matrix_df["rs_pct"] + 0.70 * matrix_df["weighted_momentum_pct"]
+    )
+    matrix_df["rs_rating"] = (
+        ((matrix_df["rs_pct_blended"] * 98) + 1)
+        .round()
+        .clip(1, 99)
+        .astype("Int64")
     )
     matrix_df["weighted_momentum_rating"] = (
         ((matrix_df["weighted_momentum_pct"] * 98) + 1)

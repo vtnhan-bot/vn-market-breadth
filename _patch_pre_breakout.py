@@ -32,15 +32,15 @@ def _table_layer_a(rows: list[dict], title: str, empty_msg: str) -> str:
     body = "".join(
         f"<tr><td class='pb-tkr'>{r['ticker']}</td>"
         f"<td>{r['close']:,.2f}</td>"
-        f"<td class='pb-num'>{_row_pct_below(r['pct_below_52w_high'])}</td>"
-        f"<td class='pb-num'>{_row_pct_below(r['rs_vs_peak_pct'])}</td></tr>"
+        f"<td class='pb-num'><b>{r['rs_rating']}</b></td>"
+        f"<td class='pb-num'>{_row_pct_below(r['pct_below_52w_high'])}</td></tr>"
         for r in rows
     )
     return f"""
         <div class="pb-table-wrap">
           <div class="pb-subhead">{title}</div>
           <table class="pb-table">
-            <thead><tr><th>Ticker</th><th>Close</th><th>Δ vs 52w high</th><th>Δ RS vs peak</th></tr></thead>
+            <thead><tr><th>Ticker</th><th>Close</th><th>RS Rating</th><th>Δ vs 52w high</th></tr></thead>
             <tbody>{body}</tbody>
           </table>
         </div>"""
@@ -56,8 +56,7 @@ def _table_layer_b(rows: list[dict], title: str, empty_msg: str) -> str:
     body = "".join(
         f"<tr><td class='pb-tkr'>{r['ticker']}</td>"
         f"<td>{r['close']:,.2f}</td>"
-        f"<td class='pb-num'><b>{r['rs_ratio']:.3f}</b></td>"
-        f"<td class='pb-num'>{r['stock_ret_6mo_pct']:+.1f}%</td>"
+        f"<td class='pb-num'><b>{r['rs_rating']}</b></td>"
         f"<td class='pb-num'>{r['bb_width_pct']:.2f}%</td>"
         f"<td class='pb-num'>{r['bb_width_percentile']:.0f}%</td></tr>"
         for r in rows
@@ -66,7 +65,7 @@ def _table_layer_b(rows: list[dict], title: str, empty_msg: str) -> str:
         <div class="pb-table-wrap">
           <div class="pb-subhead">{title}</div>
           <table class="pb-table">
-            <thead><tr><th>Ticker</th><th>Close</th><th>RS_Ratio</th><th>Stock 6m</th><th>BB Width</th><th>BB %ile</th></tr></thead>
+            <thead><tr><th>Ticker</th><th>Close</th><th>RS Rating</th><th>BB Width</th><th>BB %ile</th></tr></thead>
             <tbody>{body}</tbody>
           </table>
         </div>"""
@@ -78,8 +77,8 @@ def _table_both(both: list[dict]) -> str:
     body = "".join(
         f"<tr><td class='pb-tkr'>{x['ticker']}</td>"
         f"<td>{x['a']['close']:,.2f}</td>"
+        f"<td class='pb-num'><b>{x['a']['rs_rating']}</b></td>"
         f"<td class='pb-num'>{_row_pct_below(x['a']['pct_below_52w_high'])}</td>"
-        f"<td class='pb-num'><b>{x['b']['rs_ratio']:.3f}</b></td>"
         f"<td class='pb-num'>{x['b']['bb_width_percentile']:.0f}%</td></tr>"
         for x in both
     )
@@ -87,7 +86,7 @@ def _table_both(both: list[dict]) -> str:
         <div class="pb-both">
           <div class="pb-subhead pb-both-head">⭐ Cả 2 tín hiệu cùng kích hoạt — cấu hình mạnh nhất</div>
           <table class="pb-table">
-            <thead><tr><th>Ticker</th><th>Close</th><th>Δ vs 52w high</th><th>RS_Ratio</th><th>BB %ile</th></tr></thead>
+            <thead><tr><th>Ticker</th><th>Close</th><th>RS Rating</th><th>Δ vs 52w high</th><th>BB %ile</th></tr></thead>
             <tbody>{body}</tbody>
           </table>
         </div>"""
@@ -97,15 +96,18 @@ def build_panel(result: pre_breakout.PreBreakoutResult) -> str:
     meta = result.meta
     coverage = (
         f"Phân tích {meta['analyzed_count']}/{meta['universe_count']} mã RS "
-        f"(thiếu OHLC cho {meta['missing_count']} mã)"
+        f"(thiếu OHLC: {meta.get('missing_ohlc_count', 0)} mã | "
+        f"thiếu RS Rating: {meta.get('missing_rating_count', 0)} mã)"
     )
     p = meta["params"]
     methodology = (
-        f"<b>Layer A</b>: RS Line ≥ {p['rs_high_tolerance']*100:.0f}% đỉnh "
-        f"{p['window_52w']} phiên & giá &lt; {p['price_base_max']*100:.0f}% đỉnh giá. "
-        f"<b>Layer B</b>: RS_Ratio = (1+stock_{p['return_lookback_days']}d) / (1+vni_{p['return_lookback_days']}d) > "
-        f"{p['rs_ratio_threshold']:.2f} & BB({p['bb_period']},{p['bb_k']:.0f}σ) width "
-        f"trong {p['squeeze_percentile']:.0f}% thấp nhất {p['return_lookback_days']} phiên gần nhất."
+        f"<b>RS Rating</b> (composite, 1-99): 30% relative-performance percentile + "
+        f"70% weighted-momentum percentile (10/20/60 phiên), xếp hạng cross-section trong universe. "
+        f"<b>Layer A</b>: RS Rating ≥ {p['rs_rating_trigger']} & giá &lt; "
+        f"{p['price_base_max']*100:.0f}% đỉnh {p['window_52w']} phiên (vẫn trong nền). "
+        f"<b>Layer B</b>: RS Rating ≥ {p['rs_rating_trigger']} & BB({p['bb_period']},{p['bb_k']:.0f}σ) "
+        f"width trong {p['squeeze_percentile']:.0f}% thấp nhất {pre_breakout.BB_PCTILE_HIST} phiên gần nhất "
+        f"(siết). Watch list nới ngưỡng RS Rating ≥ {p['rs_rating_watch']}."
     )
 
     return f"""{PANEL_MARKER}
@@ -117,16 +119,16 @@ def build_panel(result: pre_breakout.PreBreakoutResult) -> str:
 
     <div class="pb-grid">
       <div>
-        <div class="pb-layer-head">📈 Layer A — RS Line Divergence</div>
-        <div class="pb-desc">RS Line lập đỉnh 52 tuần trong khi giá vẫn đang trong nền (chưa break ra).</div>
+        <div class="pb-layer-head">📈 Layer A — RS Leader trong nền</div>
+        <div class="pb-desc">RS Rating composite ≥ {p['rs_rating_trigger']} (top ~10% universe) trong khi giá vẫn đang trong nền (chưa break ra).</div>
         {_table_layer_a(result.layer_a, '🔥 Đã kích hoạt', 'Không có mã nào đáp ứng tiêu chí nghiêm ngặt hôm nay.')}
-        {_table_layer_a(result.layer_a_watch, '👀 Theo dõi (top 10 trong nền, RS gần đỉnh)', '—')}
+        {_table_layer_a(result.layer_a_watch, f"👀 Theo dõi (RS Rating ≥ {p['rs_rating_watch']}, trong nền)", '—')}
       </div>
       <div>
-        <div class="pb-layer-head">🎯 Layer B — RS_Ratio + BB Squeeze</div>
-        <div class="pb-desc">Vượt VNINDEX trên 20% trong 6 tháng đồng thời Bollinger Band thắt chặt → sắp bùng nổ.</div>
+        <div class="pb-layer-head">🎯 Layer B — RS Leader + BB Squeeze</div>
+        <div class="pb-desc">RS Rating composite ≥ {p['rs_rating_trigger']} đồng thời Bollinger Band thắt chặt → sắp bùng nổ.</div>
         {_table_layer_b(result.layer_b, '🔥 Đã kích hoạt', 'Không có mã nào đáp ứng tiêu chí nghiêm ngặt hôm nay.')}
-        {_table_layer_b(result.layer_b_watch, '👀 Theo dõi (top 10 RS_Ratio cao + BB siết)', '—')}
+        {_table_layer_b(result.layer_b_watch, f"👀 Theo dõi (RS Rating ≥ {p['rs_rating_watch']}, BB siết ≤ {p['squeeze_percentile_watch']:.0f}%)", '—')}
       </div>
     </div>
 
@@ -168,7 +170,7 @@ def main() -> None:
         sys.exit(1)
     latest = candidates[-1]
     print(f"Computing pre-breakout from {latest.name} ({latest.parent.name})...")
-    result = pre_breakout.compute(latest, HERE / "rs_universe.csv")
+    result = pre_breakout.compute(latest, HERE / "rs_fixed_tickers.csv")
     print(
         f"  layer_a={len(result.layer_a)}  watch_a={len(result.layer_a_watch)}  "
         f"layer_b={len(result.layer_b)}  watch_b={len(result.layer_b_watch)}  "

@@ -34,6 +34,7 @@ from vnstock import Vnstock
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TICKERS_FILE = SCRIPT_DIR / "tickers.csv"
+RS_UNIVERSE_FILE = SCRIPT_DIR / "rs_fixed_tickers.csv"  # unified canonical universe
 DATA_DIR = SCRIPT_DIR / "data"
 ARCHIVE_DIR = DATA_DIR / "archive"
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -107,6 +108,64 @@ def read_tickers(limit: int = 100) -> list[str]:
     if INDEX_TICKER not in tickers:
         tickers.append(INDEX_TICKER)
     return tickers
+
+
+def read_rs_universe_tickers() -> list[str]:
+    """Read the RS monitor universe (200 tickers) used by pre_breakout.py.
+
+    Returns [] if the file is missing — the caller decides whether that's fatal.
+    """
+    if not RS_UNIVERSE_FILE.exists():
+        LOGGER.warning(
+            "Unified universe file not found at %s; pre-breakout coverage will be limited "
+            "to the tickers.csv top-100 overlap.",
+            RS_UNIVERSE_FILE,
+        )
+        return []
+
+    df = pd.read_csv(RS_UNIVERSE_FILE)
+    if "ticker" not in df.columns:
+        LOGGER.warning("%s missing 'ticker' column; skipping.", RS_UNIVERSE_FILE.name)
+        return []
+
+    tickers = df["ticker"].dropna().astype(str).str.strip().str.upper()
+    tickers = [t for t in tickers if t and t.lower() != "nan"]
+    return tickers
+
+
+def build_fetch_universe() -> list[str]:
+    """Build the EOD fetch universe from rs_fixed_tickers.csv (+ VNINDEX).
+
+    rs_fixed_tickers.csv is the unified canonical universe and the source of
+    truth for what pre_breakout.py and rs_matrix_3T.py analyse. Driving the
+    downloader off this file ensures OHLC coverage for every ticker that the
+    matrix and pre-breakout layers depend on.
+    """
+    rs = read_rs_universe_tickers()
+    if not rs:
+        raise RuntimeError(
+            f"{RS_UNIVERSE_FILE.name} is empty or unreadable; cannot build fetch universe."
+        )
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for t in rs:
+        t_upper = t.upper()
+        if t_upper in seen:
+            continue
+        seen.add(t_upper)
+        ordered.append(t_upper)
+
+    if INDEX_TICKER not in seen:
+        ordered.append(INDEX_TICKER)
+
+    LOGGER.info(
+        "Fetch universe: %d tickers from %s (+ %s)",
+        len(rs),
+        RS_UNIVERSE_FILE.name,
+        INDEX_TICKER,
+    )
+    return ordered
 
 
 def get_today_cache_dir() -> Path:
@@ -334,7 +393,7 @@ def main() -> None:
     setup_vnstock_api_key()
     archive_previous_day_cache()
     cache_dir = get_today_cache_dir()
-    tickers = read_tickers(limit=100)
+    tickers = build_fetch_universe()
 
     end_date = date.today().isoformat()
     start_date = (date.today() - timedelta(days=FETCH_DAYS_BACK)).isoformat()
