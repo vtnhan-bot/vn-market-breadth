@@ -924,20 +924,12 @@ def build_html(
             f"Warning: RS Matrix incomplete ({rs_payload['audit_confirmed_count']}/{rs_payload['expected_ticker_count']} tickers confirmed)"
         )
 
+    # Universe Drift Alert banner is suppressed because the unified locked
+    # universe (rs_fixed_tickers.csv = 230 tickers) intentionally exceeds the
+    # institutional 3T scan (172 tickers) by 58 manual pre-breakout/breadth
+    # additions, which the drift detector reports as false-positive removals.
+    # The drift script still runs and writes logs/universe_drift_*.txt for audit.
     drift_notification_html = ""
-    if drift_payload and drift_payload["is_significant"]:
-        drift_lines = drift_payload["additions"][:3] + drift_payload["removals"][:3]
-        drift_preview = "<br>".join(drift_lines)
-        extra_count = drift_payload["total_changes"] - len(drift_lines)
-        if extra_count > 0:
-            drift_preview += f"<br>... và {extra_count} thay đổi khác"
-
-        drift_notification_html = f"""
-  <div class="drift-alert">
-    <strong>Universe Drift Alert</strong> | Ngày quét: {drift_payload['scan_date']} | Tổng thay đổi: {drift_payload['total_changes']}
-    <div class="drift-alert-detail">{drift_preview}</div>
-  </div>
-"""
 
     now_str = datetime.now(ICT).strftime("%d/%m/%Y %H:%M")
     session_label = datetime.now(ICT).strftime("%d/%m/%Y")
