@@ -13,7 +13,7 @@ import webbrowser
 import warnings
 import argparse
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
@@ -457,11 +457,24 @@ def load_crypto_rs_payload():
             })
         rows.append({"ticker": ticker, "cells": cells})
 
+    # File-mtime in ICT = when the matrix was last rebuilt by the pipeline.
+    # The latest closed UTC bar's calendar date is also surfaced so the user
+    # can see which trading day's candle drove the rightmost column.
+    mtime_ict = datetime.fromtimestamp(RS_MATRIX_CRYPTO_PATH.stat().st_mtime, ICT)
+    latest_bar_date = max(session_dates)
+    bar_close_ict = pd.Timestamp(latest_bar_date) + timedelta(days=1)
+    update_time_label = (
+        f"Cập nhật bảng: {mtime_ict.strftime('%H:%M %d/%m/%Y')} (giờ Việt Nam) "
+        f"| Nến mới nhất: UTC {pd.Timestamp(latest_bar_date).strftime('%d/%m/%Y')} "
+        f"(đóng lúc 07:00 ngày {bar_close_ict.strftime('%d/%m/%Y')} ICT)"
+    )
+
     return {
         "dates": session_labels,
         "rows": rows,
         "row_count": len(rows),
         "source_label": f"Nguồn: crypto_universe.csv ({len(rows)} coins, vs BTC-USD)",
+        "update_time_label": update_time_label,
         "footer_text": f"Vũ trụ: crypto_universe.csv | Quy mô: {len(rows)} coins | Benchmark: BTC-USD",
     }
 
@@ -1089,6 +1102,7 @@ def build_html(
       <div class="rs-toolbar-note">RS 90 ngày so với BTC | mới nhất trước | dòng dưới = % giá thay đổi so với phiên trước</div>
     </div>
     <div class="rs-source-label rs-source-ok">{rs_crypto_payload['source_label']}</div>
+    <div class="rs-update-time">{rs_crypto_payload['update_time_label']}</div>
     <div class="rs-table-wrap">
       <table class="rs-table" id="rs-table-crypto">
         <thead>
@@ -1284,6 +1298,12 @@ def build_html(
       font-size: 0.8rem;
       font-weight: 700;
       border: 1px solid transparent;
+    }}
+    .rs-update-time {{
+      font-size: 0.78rem;
+      color: #777;
+      margin: -6px 0 12px;
+      font-style: italic;
     }}
     .rs-source-ok {{
       color: #2E7D32;
