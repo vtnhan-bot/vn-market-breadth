@@ -27,10 +27,10 @@ print(f"Restored {restored} cache files.")
 PYEOF
 
 # 2) Ensure runtime directories exist
-mkdir -p data logs audit_logs cache/rs_history cache/archive
+mkdir -p data logs audit_logs cache/rs_history cache/rs_history_crypto cache/archive
 
 # 3) Run the full daily pipeline:
-#    eod_batch_downloader -> rs_universe_generator -> rs_matrix_3T -> market_breadth
+#    eod_batch_downloader -> rs_universe_generator -> rs_matrix_3T -> rs_matrix_crypto -> market_breadth
 echo "Running daily pipeline (run_daily_update.py)..."
 python3 run_daily_update.py
 

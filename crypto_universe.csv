@@ -1,0 +1,51 @@
+ticker,company_name,exchange,market_cap,industry,locked_at,lock_rule
+BTC-USD,Bitcoin,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50 (benchmark)
+ETH-USD,Ethereum,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+BNB-USD,BNB,Crypto,,Exchange Token,2026-05-05,Pinned crypto top-50
+SOL-USD,Solana,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+XRP-USD,XRP,Crypto,,Payments,2026-05-05,Pinned crypto top-50
+DOGE-USD,Dogecoin,Crypto,,Memecoin,2026-05-05,Pinned crypto top-50
+ADA-USD,Cardano,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+AVAX-USD,Avalanche,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+TRX-USD,TRON,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+TON-USD,Toncoin,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+DOT-USD,Polkadot,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+LINK-USD,Chainlink,Crypto,,Oracle,2026-05-05,Pinned crypto top-50
+MATIC-USD,Polygon,Crypto,,Layer 2,2026-05-05,Pinned crypto top-50
+LTC-USD,Litecoin,Crypto,,Payments,2026-05-05,Pinned crypto top-50
+BCH-USD,Bitcoin Cash,Crypto,,Payments,2026-05-05,Pinned crypto top-50
+SHIB-USD,Shiba Inu,Crypto,,Memecoin,2026-05-05,Pinned crypto top-50
+UNI-USD,Uniswap,Crypto,,DeFi,2026-05-05,Pinned crypto top-50
+ATOM-USD,Cosmos,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+NEAR-USD,NEAR Protocol,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+ICP-USD,Internet Computer,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+ETC-USD,Ethereum Classic,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+XLM-USD,Stellar,Crypto,,Payments,2026-05-05,Pinned crypto top-50
+FIL-USD,Filecoin,Crypto,,Storage,2026-05-05,Pinned crypto top-50
+HBAR-USD,Hedera,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+APT-USD,Aptos,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+ARB-USD,Arbitrum,Crypto,,Layer 2,2026-05-05,Pinned crypto top-50
+OP-USD,Optimism,Crypto,,Layer 2,2026-05-05,Pinned crypto top-50
+INJ-USD,Injective,Crypto,,DeFi,2026-05-05,Pinned crypto top-50
+IMX-USD,Immutable,Crypto,,Gaming,2026-05-05,Pinned crypto top-50
+GRT-USD,The Graph,Crypto,,Infrastructure,2026-05-05,Pinned crypto top-50
+VET-USD,VeChain,Crypto,,Supply Chain,2026-05-05,Pinned crypto top-50
+SUI-USD,Sui,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+RUNE-USD,THORChain,Crypto,,DeFi,2026-05-05,Pinned crypto top-50
+AAVE-USD,Aave,Crypto,,DeFi,2026-05-05,Pinned crypto top-50
+MKR-USD,Maker,Crypto,,DeFi,2026-05-05,Pinned crypto top-50
+ALGO-USD,Algorand,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+SAND-USD,The Sandbox,Crypto,,Gaming,2026-05-05,Pinned crypto top-50
+MANA-USD,Decentraland,Crypto,,Gaming,2026-05-05,Pinned crypto top-50
+EGLD-USD,MultiversX,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+XTZ-USD,Tezos,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+STX-USD,Stacks,Crypto,,Layer 2,2026-05-05,Pinned crypto top-50
+AXS-USD,Axie Infinity,Crypto,,Gaming,2026-05-05,Pinned crypto top-50
+FTM-USD,Fantom,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+TIA-USD,Celestia,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+SEI-USD,Sei,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+RNDR-USD,Render,Crypto,,Compute,2026-05-05,Pinned crypto top-50
+FET-USD,Fetch.ai,Crypto,,AI,2026-05-05,Pinned crypto top-50
+TAO-USD,Bittensor,Crypto,,AI,2026-05-05,Pinned crypto top-50
+KAS-USD,Kaspa,Crypto,,Layer 1,2026-05-05,Pinned crypto top-50
+WIF-USD,dogwifhat,Crypto,,Memecoin,2026-05-05,Pinned crypto top-50

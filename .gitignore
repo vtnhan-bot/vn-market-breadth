@@ -11,6 +11,7 @@ logs/
 audit_logs/
 market_breadth.html
 rs_matrix_3T.csv
+rs_matrix_crypto.csv
 rs_matrix_data.csv
 rs_data_all_tickers.json
 rs_heatmap_data_complete.js
@@ -24,3 +25,4 @@ rs_heatmap_data_complete.js
 
 # Bootstrap CSVs we WANT committed (override gitignore patterns)
 !rs_fixed_tickers.csv
+!crypto_universe.csv

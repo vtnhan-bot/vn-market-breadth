@@ -42,6 +42,8 @@ INDEX_TICKER = "VNINDEX"
 INSTITUTIONAL_UNIVERSE_3T_PATH = SCRIPT_DIR / "institutional_universe_3T.csv"
 RS_FIXED_TICKERS_PATH = SCRIPT_DIR / "rs_fixed_tickers.csv"
 RS_MATRIX_3T_PATH = SCRIPT_DIR / "rs_matrix_3T.csv"
+CRYPTO_UNIVERSE_PATH = SCRIPT_DIR / "crypto_universe.csv"
+RS_MATRIX_CRYPTO_PATH = SCRIPT_DIR / "rs_matrix_crypto.csv"
 UNIVERSE_DRIFT_LATEST_PATH = SCRIPT_DIR / "logs" / "universe_drift_latest.txt"
 SIGNIFICANT_DRIFT_THRESHOLD = 3
 
@@ -356,6 +358,111 @@ def load_rs_matrix_payload():
             f"Vũ trụ: rs_fixed_tickers.csv | Quy mô: "
             f"{expected_ticker_count or visible_ticker_count} cổ phiếu"
         ),
+    }
+
+
+def load_crypto_rs_payload():
+    """Build the crypto RS heatmap payload from rs_matrix_crypto.csv.
+
+    Mirrors the shape of load_rs_matrix_payload() so the rendering loop is
+    shared. No drift/audit logic — the crypto universe is pinned.
+    """
+    if not RS_MATRIX_CRYPTO_PATH.exists():
+        log("WARNING: rs_matrix_crypto.csv missing. Crypto RS heatmap will be omitted.")
+        return None
+
+    rs_df = pd.read_csv(RS_MATRIX_CRYPTO_PATH)
+    if rs_df.empty:
+        log("WARNING: rs_matrix_crypto.csv is empty. Crypto RS heatmap will be omitted.")
+        return None
+
+    required_columns = {"ticker", "session_date", "rs_rating", "daily_change_pct"}
+    if required_columns - set(rs_df.columns):
+        log(
+            "WARNING: rs_matrix_crypto.csv is missing required columns: "
+            f"{', '.join(sorted(required_columns - set(rs_df.columns)))}"
+        )
+        return None
+
+    rs_df["ticker"] = rs_df["ticker"].astype(str).str.upper()
+    rs_df["session_date"] = pd.to_datetime(rs_df["session_date"], errors="coerce")
+    rs_df = rs_df.dropna(subset=["ticker", "session_date"])
+    if rs_df.empty:
+        return None
+
+    rs_df["rs_rating"] = pd.to_numeric(rs_df["rs_rating"], errors="coerce")
+    rs_df["daily_change_pct"] = pd.to_numeric(rs_df["daily_change_pct"], errors="coerce")
+    rs_df["weighted_momentum_score"] = pd.to_numeric(
+        rs_df.get("weighted_momentum_score"), errors="coerce"
+    )
+    rs_df["weighted_momentum_rating"] = pd.to_numeric(
+        rs_df.get("weighted_momentum_rating"), errors="coerce"
+    )
+    if "latest_rs_rating" in rs_df.columns:
+        rs_df["latest_rs_rating"] = pd.to_numeric(rs_df["latest_rs_rating"], errors="coerce")
+
+    session_dates = list(reversed(sorted(rs_df["session_date"].dropna().unique())[-20:]))
+    if not session_dates:
+        return None
+    session_labels = [pd.Timestamp(d).strftime("%d-%m") for d in session_dates]
+
+    latest_date = max(session_dates)
+    if "latest_rs_rating" not in rs_df.columns:
+        latest = (
+            rs_df[rs_df["session_date"] == latest_date][["ticker", "rs_rating"]]
+            .rename(columns={"rs_rating": "latest_rs_rating"})
+        )
+        rs_df = rs_df.merge(latest, on="ticker", how="left")
+
+    ticker_order = (
+        rs_df[["ticker", "latest_rs_rating"]]
+        .drop_duplicates(subset=["ticker"])
+        .sort_values(["latest_rs_rating", "ticker"], ascending=[False, True])
+        ["ticker"].tolist()
+    )
+
+    rows = []
+    for ticker in ticker_order:
+        slc = rs_df[rs_df["ticker"] == ticker].set_index("session_date")
+        cells = []
+        for sd in session_dates:
+            if sd in slc.index:
+                row = slc.loc[sd]
+                if isinstance(row, pd.DataFrame):
+                    row = row.iloc[-1]
+                rs_rating = int(row["rs_rating"]) if pd.notna(row["rs_rating"]) else None
+                momentum_rating = (
+                    int(row["weighted_momentum_rating"])
+                    if pd.notna(row["weighted_momentum_rating"]) else None
+                )
+                momentum_score = (
+                    float(row["weighted_momentum_score"])
+                    if pd.notna(row["weighted_momentum_score"]) else None
+                )
+                daily_change = (
+                    float(row["daily_change_pct"])
+                    if pd.notna(row["daily_change_pct"]) else None
+                )
+            else:
+                rs_rating = momentum_rating = momentum_score = daily_change = None
+            cells.append({
+                "rs_rating": rs_rating,
+                "weighted_momentum_rating": momentum_rating,
+                "weighted_momentum_score": (
+                    round(momentum_score, 2) if momentum_score is not None else None
+                ),
+                "daily_change_pct": (
+                    round(daily_change, 2) if daily_change is not None else None
+                ),
+            })
+        rows.append({"ticker": ticker, "cells": cells})
+
+    return {
+        "dates": session_labels,
+        "rows": rows,
+        "row_count": len(rows),
+        "source_label": f"Nguồn: crypto_universe.csv ({len(rows)} coins, vs BTC-USD)",
+        "footer_text": f"Vũ trụ: crypto_universe.csv | Quy mô: {len(rows)} coins | Benchmark: BTC-USD",
     }
 
 
@@ -696,6 +803,7 @@ def build_html(
     price_data=None,
     us_vix_df=None,
     us_nasdaq_df=None,
+    rs_crypto_payload=None,
 ):
     dates = [d.strftime("%d-%m-%Y") for d in breadth.index]
 
@@ -923,6 +1031,80 @@ def build_html(
         rs_footer_warning = (
             f"Warning: RS Matrix incomplete ({rs_payload['audit_confirmed_count']}/{rs_payload['expected_ticker_count']} tickers confirmed)"
         )
+
+    # Crypto RS panel — same coloring rules, separate table; rendered below the VN heatmap.
+    rs_crypto_section_html = ""
+    if rs_crypto_payload:
+        rs_crypto_dates = rs_crypto_payload["dates"]
+        rs_crypto_date_headers = "".join(f"<th>{d}</th>" for d in rs_crypto_dates)
+        rs_crypto_rows_html = ""
+        for row in rs_crypto_payload["rows"]:
+            cells_html = ""
+            for cell in row["cells"]:
+                rs_rating = cell["rs_rating"]
+                daily_change = cell["daily_change_pct"]
+                if rs_rating is None:
+                    tone_class = "rs-cell rs-empty"
+                    rs_text = "–"
+                    change_text = ""
+                    change_class = "rs-change"
+                else:
+                    if rs_rating >= 90:
+                        tone_class = "rs-cell rs-leader"
+                    elif rs_rating >= 70:
+                        tone_class = "rs-cell rs-strong"
+                    elif rs_rating >= 50:
+                        tone_class = "rs-cell rs-neutral"
+                    else:
+                        tone_class = "rs-cell rs-laggard"
+                    rs_text = str(rs_rating)
+                    if daily_change is not None and not pd.isna(daily_change):
+                        change_text = f"{daily_change:+.2f}%"
+                        if daily_change > 0:
+                            change_class = "rs-change rs-change-up"
+                        elif daily_change < 0:
+                            change_class = "rs-change rs-change-down"
+                        else:
+                            change_class = "rs-change rs-change-flat"
+                    else:
+                        change_text = ""
+                        change_class = "rs-change"
+                cells_html += (
+                    f'<td class="{tone_class}" data-rs="{rs_text}">'
+                    f'<div class="rs-score">{rs_text}</div>'
+                    f'<div class="{change_class}">{change_text}</div>'
+                    f"</td>"
+                )
+            rs_crypto_rows_html += (
+                f'<tr data-ticker="{row["ticker"]}">'
+                f'<td class="rs-ticker">{row["ticker"]}</td>'
+                f"{cells_html}</tr>"
+            )
+
+        rs_crypto_section_html = f"""
+  <div class="panel">
+    <h2>Relative Strength Heatmap — Crypto <span class="tag">Top 50 vs BTC</span></h2>
+    <div class="rs-toolbar">
+      <input id="rs-search-crypto" class="rs-search" type="text" placeholder="Tìm coin...">
+      <div class="rs-toolbar-note">RS 90 ngày so với BTC | mới nhất trước | dòng dưới = % giá thay đổi so với phiên trước</div>
+    </div>
+    <div class="rs-source-label rs-source-ok">{rs_crypto_payload['source_label']}</div>
+    <div class="rs-table-wrap">
+      <table class="rs-table" id="rs-table-crypto">
+        <thead>
+          <tr>
+            <th class="rs-sticky-col">Coin</th>
+            {rs_crypto_date_headers}
+          </tr>
+        </thead>
+        <tbody>
+          {rs_crypto_rows_html}
+        </tbody>
+      </table>
+    </div>
+    <div class="rs-footer">{rs_crypto_payload['footer_text']}</div>
+  </div>
+"""
 
     # Universe Drift Alert banner is suppressed because the unified locked
     # universe (rs_fixed_tickers.csv = 230 tickers) intentionally exceeds the
@@ -1320,6 +1502,7 @@ def build_html(
   </div>
 
   {rs_section_html}
+  {rs_crypto_section_html}
 
   <p class="note" style="text-align:center;padding-bottom:20px">
     Dữ liệu: vnstock EOD ({provider_label}) &nbsp;|&nbsp; Vũ trụ: {analysis['n_tickers']} CP top-100 HOSE+HNX &nbsp;|&nbsp;
@@ -1481,6 +1664,17 @@ if (rsSearch) {{
     }});
   }});
 }}
+
+const rsSearchCrypto = document.getElementById('rs-search-crypto');
+if (rsSearchCrypto) {{
+  rsSearchCrypto.addEventListener('input', (event) => {{
+    const query = event.target.value.trim().toUpperCase();
+    document.querySelectorAll('#rs-table-crypto tbody tr').forEach((row) => {{
+      const ticker = row.getAttribute('data-ticker') || '';
+      row.style.display = !query || ticker.includes(query) ? '' : 'none';
+    }});
+  }});
+}}
 </script>
 </body>
 </html>
@@ -1583,6 +1777,13 @@ def main():
                     f"({rs_payload['audit_confirmed_count']}/{rs_payload['expected_ticker_count']} tickers confirmed)"
                 )
 
+        rs_crypto_payload = load_crypto_rs_payload()
+        if rs_crypto_payload:
+            log(
+                f"Crypto RS heatmap loaded: {rs_crypto_payload['row_count']} coins x "
+                f"{len(rs_crypto_payload['dates'])} sessions"
+            )
+
         drift_payload = load_universe_drift_payload()
         if drift_payload:
             log(
@@ -1618,6 +1819,7 @@ def main():
             price_data,
             us_vix_df,
             us_nasdaq_df,
+            rs_crypto_payload=rs_crypto_payload,
         )
         with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
             f.write(html)

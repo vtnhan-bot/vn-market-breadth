@@ -76,6 +76,7 @@ def main() -> int:
             run_step("Downloader", "eod_batch_downloader.py", log_handle)
             run_step("Universe Drift", "rs_universe_generator.py", log_handle)
             run_step("RS 3T", "rs_matrix_3T.py", log_handle)
+            run_step("RS Crypto", "rs_matrix_crypto.py", log_handle)
             run_step("Breadth", "market_breadth.py", log_handle)
         except subprocess.CalledProcessError as exc:
             emit(

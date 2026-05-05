@@ -20,6 +20,7 @@ COPY run_daily_update.py \
      eod_batch_downloader.py \
      rs_universe_generator.py \
      rs_matrix_3T.py \
+     rs_matrix_crypto.py \
      rs_source2.py \
      market_breadth.py \
      pre_breakout.py \
@@ -32,6 +33,7 @@ COPY tickers.csv \
      institutional_universe_3T.csv \
      rs_fixed_tickers.csv \
      rs_universe.csv \
+     crypto_universe.csv \
      ./
 
 # Cloud Run entrypoint
