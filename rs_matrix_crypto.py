@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -66,6 +66,21 @@ def _cache_path(ticker: str) -> Path:
     return CACHE_DIR / f"{safe_name}.csv"
 
 
+def _drop_in_progress_utc_bar(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only finalized UTC daily candles.
+
+    Crypto trades 24/7 and yfinance's daily bar boundary is 00:00 UTC. When
+    the pipeline runs at 15:30 ICT (08:30 UTC), the 'today UTC' bar is only
+    ~8.5h into its 24h window — i.e. an in-progress partial. Excluding it
+    means the heatmap's rightmost column is always the candle that closed
+    at 07:00 ICT today, not a mid-day snapshot.
+    """
+    if df is None or df.empty or "time" not in df.columns:
+        return df
+    today_utc = datetime.now(timezone.utc).date()
+    return df[df["time"] < today_utc].reset_index(drop=True)
+
+
 def _normalize_yf_frame(raw_df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     if raw_df is None or raw_df.empty:
         raise ValueError(f"{ticker}: empty yfinance frame.")
@@ -98,7 +113,7 @@ def _load_cached_history(ticker: str) -> pd.DataFrame | None:
         return None
     try:
         df = pd.read_csv(cache_path)
-        return _normalize_yf_frame(df, ticker)
+        return _drop_in_progress_utc_bar(_normalize_yf_frame(df, ticker))
     except Exception:
         return None
 
@@ -122,7 +137,7 @@ def _fetch_yf_history(ticker: str, start_date: str, end_date: str) -> pd.DataFra
         )
         if raw is None or raw.empty:
             return None
-        return _normalize_yf_frame(raw, ticker)
+        return _drop_in_progress_utc_bar(_normalize_yf_frame(raw, ticker))
     except Exception as exc:
         LOGGER.warning("%s yfinance fetch failed: %s", ticker, exc)
         return None
