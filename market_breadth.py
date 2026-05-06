@@ -1460,14 +1460,14 @@ def build_html(
   <div id="chart"></div>
 
   <div class="panel" style="background:#fff;border:1px solid #e0d8cc;">
-    <h2>📡 Độ rộng intraday <span class="tag">Cập nhật mỗi 15 phút</span></h2>
+    <h2>📡 Độ rộng 50 phiên + intraday <span class="tag">Cập nhật mỗi 15 phút</span></h2>
     <div id="intraday-status" style="font-size:0.85rem;color:#666;margin-bottom:8px">
       <span id="intraday-update-time">Đang tải...</span>
       <span id="intraday-tick-count" style="margin-left:12px;color:#888"></span>
     </div>
-    <div id="intraday-chart" style="min-height:300px"></div>
+    <div id="intraday-chart" style="min-height:340px"></div>
     <div style="font-size:0.78rem;color:#888;margin-top:6px;font-style:italic">
-      % Top-100 trên SMA-N tại từng tick 15 phút trong phiên (giờ Việt Nam) — phiên sáng 09:30–11:30, phiên chiều 13:00–14:45.
+      50 phiên đóng cửa gần nhất (theo ngày DD-MM) + tick intraday hôm nay (HH:MM, giờ Việt Nam). Phiên giao dịch: sáng 09:30–11:30, chiều 13:00–14:45.
     </div>
   </div>
 
@@ -1714,28 +1714,30 @@ const INTRADAY_MA_PERIODS = [3, 5, 10, 20, 50, 200];
 const INTRADAY_MA_COLORS = {{3:'#00BCD4',5:'#FFA726',10:'#43A047',20:'#1E88E5',50:'#8E24AA',200:'#E53935'}};
 
 function renderIntradayBreadth(doc) {{
+  const eodHistory = (doc && doc.eod_history) || [];
   const updates = (doc && doc.updates) || [];
   const status = document.getElementById('intraday-update-time');
   const tickEl = document.getElementById('intraday-tick-count');
-  if (!updates.length) {{
-    status.textContent = 'Chưa có dữ liệu intraday cho hôm nay (' + (doc.date || '—') + ').';
+  const allPoints = eodHistory.concat(updates);  // 50 EOD days + today's ticks
+  if (!allPoints.length) {{
+    status.textContent = 'Chưa có dữ liệu cho hôm nay (' + (doc.date || '—') + ').';
     tickEl.textContent = '';
     Plotly.purge('intraday-chart');
     return;
   }}
-  const intradayCount = updates.filter(u => u.kind !== 'eod_t_minus_1').length;
-  const lastUpdated = doc.last_updated_ict || (updates[updates.length - 1] || {{}}).time || '—';
+  const intradayCount = updates.length;
+  const lastUpdated = doc.last_updated_ict || '—';
   status.textContent = 'Cập nhật lúc ' + lastUpdated + ' (giờ Việt Nam, ngày ' + doc.date + ')';
-  tickEl.textContent = intradayCount + ' tick intraday hôm nay (kèm điểm Đóng T-1)';
+  tickEl.textContent = eodHistory.length + ' phiên EOD + ' + intradayCount + ' tick intraday hôm nay';
 
-  const x = updates.map(u => u.time);
+  const x = allPoints.map(u => u.time);
   const traces = INTRADAY_MA_PERIODS.map(p => ({{
     x: x,
-    y: updates.map(u => (u['mbz' + p] === null || u['mbz' + p] === undefined) ? null : u['mbz' + p]),
+    y: allPoints.map(u => (u['mbz' + p] === null || u['mbz' + p] === undefined) ? null : u['mbz' + p]),
     mode: 'lines+markers',
     name: 'mbz' + p,
     line: {{color: INTRADAY_MA_COLORS[p], width: p === 50 ? 3 : 2}},
-    marker: {{size: 5}},
+    marker: {{size: 4}},
   }}));
   const layout = {{
     margin: {{t: 24, l: 48, r: 24, b: 36}},
