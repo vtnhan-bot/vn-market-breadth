@@ -39,3 +39,10 @@ jobs:
             --image asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest \
             --region asia-southeast1 \
             --project project-feb6df0e-9749-4925-b4e
+
+      - name: Update intraday Cloud Run Job image
+        run: |
+          gcloud run jobs update intraday-breadth-job \
+            --image asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest \
+            --region asia-southeast1 \
+            --project project-feb6df0e-9749-4925-b4e
