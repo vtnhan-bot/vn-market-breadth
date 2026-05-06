@@ -1723,9 +1723,10 @@ function renderIntradayBreadth(doc) {{
     Plotly.purge('intraday-chart');
     return;
   }}
-  const lastUpdated = doc.last_updated_ict || updates[updates.length - 1].time;
+  const intradayCount = updates.filter(u => u.kind !== 'eod_t_minus_1').length;
+  const lastUpdated = doc.last_updated_ict || (updates[updates.length - 1] || {{}}).time || '—';
   status.textContent = 'Cập nhật lúc ' + lastUpdated + ' (giờ Việt Nam, ngày ' + doc.date + ')';
-  tickEl.textContent = updates.length + ' tick' + (updates.length === 1 ? '' : 's') + ' hôm nay';
+  tickEl.textContent = intradayCount + ' tick intraday hôm nay (kèm điểm Đóng T-1)';
 
   const x = updates.map(u => u.time);
   const traces = INTRADAY_MA_PERIODS.map(p => ({{

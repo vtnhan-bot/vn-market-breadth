@@ -175,7 +175,60 @@ def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> di
     return breadth
 
 
-def update_intraday_json_on_gcs(now_ict: datetime, breadth: dict) -> dict:
+def compute_t_minus_1_eod_breadth(combined_path: Path, top100: list[str]) -> tuple[dict, "datetime.date | None"]:
+    """% above SMA-N at T-1 EOD: close[T-1] vs SMA built from N closes ending T-1.
+
+    Returns (breadth_dict, t_minus_1_date). Uses the SAME SMA reference as the
+    intraday compute_breadth() so the T-1 anchor and intraday ticks plot on a
+    consistent series — only the price-being-compared differs (T-1 close vs
+    live intraday).
+    """
+    df = pd.read_csv(combined_path, encoding="utf-8-sig")
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
+    df = df.dropna(subset=["time", "ticker", "close"])
+    df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+    df = df.dropna(subset=["close"])
+
+    wide = df.pivot_table(index="time", columns="ticker", values="close", aggfunc="last")
+    wide = wide.sort_index().ffill(limit=2)
+
+    today_dt = pd.Timestamp(datetime.now(ICT).date())
+    if today_dt in wide.index:
+        wide = wide.drop(today_dt)
+
+    if wide.empty:
+        return {f"mbz{p}": None for p in MA_PERIODS} | {"sample_size": 0}, None
+
+    t_minus_1_date = wide.index.max().date()
+
+    breadth: dict = {}
+    sample_size = 0
+    for period in MA_PERIODS:
+        sma = wide.rolling(period, min_periods=period).mean()
+        latest_sma = sma.iloc[-1]
+        latest_close = wide.iloc[-1]
+
+        above = total = 0
+        for ticker in top100:
+            if ticker not in latest_sma.index:
+                continue
+            sma_v = latest_sma[ticker]
+            px = latest_close[ticker]
+            if pd.isna(sma_v) or pd.isna(px):
+                continue
+            total += 1
+            if px > sma_v:
+                above += 1
+        pct = round((above / total) * 100.0, 2) if total else None
+        breadth[f"mbz{period}"] = pct
+        sample_size = max(sample_size, total)
+
+    breadth["sample_size"] = sample_size
+    return breadth, t_minus_1_date
+
+
+def update_intraday_json_on_gcs(now_ict: datetime, breadth: dict, t_minus_1: dict | None) -> dict:
     """Read existing JSON from GCS, append today's tick, write back. Returns full doc."""
     from google.cloud import storage
     client = storage.Client()
@@ -194,17 +247,28 @@ def update_intraday_json_on_gcs(now_ict: datetime, breadth: dict) -> dict:
         existing = {"date": today_str, "updates": []}
 
     tick = {
+        "kind": "intraday",
         "time": now_ict.strftime("%H:%M"),
         "timestamp_ict": now_ict.strftime("%Y-%m-%d %H:%M:%S %z"),
         **{k: (None if v is None else v) for k, v in breadth.items()},
     }
-    existing["updates"].append(tick)
 
-    # Dedup by HH:MM (in case of double-fire), keep last
+    # Re-anchor: rebuild updates list = [T-1 EOD] + sorted(intraday ticks).
+    # Old T-1 entries are dropped (we recompute fresh each tick); intraday
+    # ticks are kept (deduped by HH:MM).
     by_time: dict[str, dict] = {}
     for u in existing["updates"]:
+        if u.get("kind") == "eod_t_minus_1":
+            continue  # we'll rebuild this from the freshly-computed t_minus_1
         by_time[u["time"]] = u
-    existing["updates"] = [by_time[t] for t in sorted(by_time)]
+    by_time[tick["time"]] = tick
+    sorted_intraday = [by_time[t] for t in sorted(by_time)]
+
+    new_updates: list[dict] = []
+    if t_minus_1 is not None:
+        new_updates.append(t_minus_1)
+    new_updates.extend(sorted_intraday)
+    existing["updates"] = new_updates
     existing["last_updated_ict"] = now_ict.strftime("%H:%M %d/%m/%Y")
 
     blob.cache_control = "no-cache, no-store, must-revalidate"
@@ -253,18 +317,38 @@ def main() -> int:
 
     breadth = compute_breadth(combined_local, current)
     LOGGER.info(
-        "Breadth: mbz3=%s mbz5=%s mbz10=%s mbz20=%s mbz50=%s mbz200=%s n=%s",
+        "Intraday: mbz3=%s mbz5=%s mbz10=%s mbz20=%s mbz50=%s mbz200=%s n=%s",
         breadth.get("mbz3"), breadth.get("mbz5"), breadth.get("mbz10"),
         breadth.get("mbz20"), breadth.get("mbz50"), breadth.get("mbz200"),
         breadth.get("sample_size"),
     )
 
+    t_minus_1_breadth, t_minus_1_date = compute_t_minus_1_eod_breadth(combined_local, tickers)
+    t_minus_1_entry: dict | None = None
+    if t_minus_1_date is not None:
+        LOGGER.info(
+            "T-1 EOD (%s): mbz3=%s mbz5=%s mbz10=%s mbz20=%s mbz50=%s mbz200=%s n=%s",
+            t_minus_1_date.strftime("%d/%m/%Y"),
+            t_minus_1_breadth.get("mbz3"), t_minus_1_breadth.get("mbz5"),
+            t_minus_1_breadth.get("mbz10"), t_minus_1_breadth.get("mbz20"),
+            t_minus_1_breadth.get("mbz50"), t_minus_1_breadth.get("mbz200"),
+            t_minus_1_breadth.get("sample_size"),
+        )
+        t_minus_1_entry = {
+            "kind": "eod_t_minus_1",
+            "time": f"Đóng T-1 ({t_minus_1_date.strftime('%d/%m')})",
+            "date": t_minus_1_date.isoformat(),
+            **{k: (None if v is None else v) for k, v in t_minus_1_breadth.items()},
+        }
+
     if os.environ.get("INTRADAY_DRY_RUN", "").lower() in ("1", "true", "yes"):
         LOGGER.info("DRY_RUN — skipping GCS upload")
-        LOGGER.info("Would write tick: %s", json.dumps(breadth, ensure_ascii=False))
+        LOGGER.info("Would write intraday tick: %s", json.dumps(breadth, ensure_ascii=False))
+        if t_minus_1_entry:
+            LOGGER.info("Would write T-1 EOD anchor: %s", json.dumps(t_minus_1_entry, ensure_ascii=False))
         return 0
 
-    doc = update_intraday_json_on_gcs(now_ict, breadth)
+    doc = update_intraday_json_on_gcs(now_ict, breadth, t_minus_1_entry)
     LOGGER.info(
         "Updated gs://%s/%s — %d ticks today (%s)",
         GCS_BUCKET, GCS_INTRADAY_KEY, len(doc["updates"]), doc["date"],
