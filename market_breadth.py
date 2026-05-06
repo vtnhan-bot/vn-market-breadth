@@ -1741,7 +1741,7 @@ function renderIntradayBreadth(doc) {{
   }}));
   const layout = {{
     margin: {{t: 24, l: 48, r: 24, b: 36}},
-    xaxis: {{title: 'Giờ Việt Nam', tickangle: 0}},
+    xaxis: {{type: 'category', title: 'Phiên / Giờ Việt Nam', tickangle: -45, automargin: true, tickfont: {{size: 9}}}},
     yaxis: {{title: '% trên SMA', range: [0, 100], ticksuffix: '%'}},
     legend: {{orientation: 'h', y: -0.18}},
     paper_bgcolor: '#fff',
