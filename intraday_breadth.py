@@ -35,7 +35,7 @@ GCS_COMBINED_KEY = "intraday/combined_dataset.csv"     # seeded by daily entrypo
 GCS_INTRADAY_KEY = "intraday_breadth.json"              # the live JSON the dashboard polls
 
 MA_PERIODS = [3, 5, 10, 20, 50, 200]
-TOP_N = 100
+MIN_OBS = 10  # EOD chart requires ≥10 daily observations per ticker (matches calculate_breadth)
 PRICE_DIVISOR = 1000.0  # vnstock prices are in raw VND; combined_dataset.csv is in 'thousand VND'
 
 # Trading-hour boundaries (ICT)
@@ -76,13 +76,19 @@ def is_trading_window(now_ict: datetime) -> bool:
     return False
 
 
-def read_top100_tickers() -> list[str]:
-    df = pd.read_csv(TICKERS_FILE)
-    if "Ticker" not in df.columns:
-        raise ValueError("tickers.csv must contain a 'Ticker' column.")
-    tickers = df["Ticker"].dropna().astype(str).str.strip()
-    tickers = [t for t in tickers if t and t.lower() != "nan"]
-    return tickers[:TOP_N]
+def get_breadth_universe(combined_path: Path) -> list[str]:
+    """Return the same universe the EOD breadth chart uses.
+
+    market_breadth.py:load_price_data_from_combined_dataset includes every
+    ticker in combined_dataset.csv with >= 10 daily observations, excluding
+    VNINDEX. We mirror that exactly so the intraday T-1 anchor matches the
+    EOD chart's rightmost-1 column number-for-number.
+    """
+    df = pd.read_csv(combined_path, encoding="utf-8-sig")
+    df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
+    df = df[df["ticker"] != "VNINDEX"]
+    counts = df.groupby("ticker").size()
+    return sorted(counts[counts >= MIN_OBS].index.tolist())
 
 
 def fetch_current_prices(tickers: list[str]) -> dict[str, float]:
@@ -121,12 +127,9 @@ def download_combined_dataset(local_dst: Path) -> Path:
     return local_dst
 
 
-def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> dict[str, float | int | None]:
-    """Compute % above SMA-N for each MA period using EOD history + current intraday price.
-
-    Each ticker's SMA-N is built from its full daily-close history; the latest
-    SMA-N value is then compared against today's current price (or the most
-    recent matching close if the ticker hasn't been seen today).
+def _build_eod_prices_frame(combined_path: Path) -> pd.DataFrame:
+    """Reproduce calculate_breadth()'s prices DataFrame: every ticker in
+    combined_dataset.csv with >=10 obs, excluding VNINDEX, ffilled up to 2.
     """
     df = pd.read_csv(combined_path, encoding="utf-8-sig")
     df["time"] = pd.to_datetime(df["time"], errors="coerce")
@@ -134,95 +137,83 @@ def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> di
     df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df = df.dropna(subset=["close"])
+    df = df[df["ticker"] != "VNINDEX"]
 
-    # Wide DataFrame: rows=date, cols=ticker
-    wide = df.pivot_table(index="time", columns="ticker", values="close", aggfunc="last")
-    wide = wide.sort_index().ffill(limit=2)
+    frames = []
+    for tkr, sub in df.groupby("ticker"):
+        if len(sub) < MIN_OBS:
+            continue
+        s = sub.set_index("time")["close"]
+        s = s[~s.index.duplicated(keep="last")]
+        frames.append(s.rename(tkr))
+    if not frames:
+        return pd.DataFrame()
 
-    # Drop today's row if it somehow exists in the EOD frame (e.g. if the
-    # daily pipeline already ran today). The SMA must be built from CLOSED
-    # EOD days only; today's intraday price is the comparison value, never
-    # an input to the SMA itself.
+    prices = pd.concat(frames, axis=1).sort_index().ffill(limit=2)
     today_dt = pd.Timestamp(datetime.now(ICT).date())
-    if today_dt in wide.index:
-        wide = wide.drop(today_dt)
+    if today_dt in prices.index:
+        prices = prices.drop(today_dt)
+    return prices
+
+
+def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> dict[str, float | int | None]:
+    """% of universe with intraday_price > SMA-N(close[T-N+1..T-1]).
+
+    Universe & SMA construction match the EOD chart's calculate_breadth()
+    exactly: every ticker in combined_dataset.csv with >=10 daily observations,
+    excluding VNINDEX. The SMA reference is frozen at T-1 (yesterday's close);
+    only the price being compared changes between intraday ticks.
+    """
+    prices = _build_eod_prices_frame(combined_path)
+    if prices.empty:
+        return {f"mbz{p}": None for p in MA_PERIODS} | {"sample_size": 0}
 
     breadth: dict[str, float | int | None] = {}
     sample_size = 0
     for period in MA_PERIODS:
-        # SMA = mean of the most recent N CLOSED EOD daily closes.
-        # latest_sma per ticker is the value of the SMA series on the last
-        # available EOD bar — i.e. the most recent fully closed day.
-        sma = wide.rolling(period, min_periods=period).mean()
-        latest_sma = sma.iloc[-1]
+        sma = prices.rolling(period, min_periods=period).mean()
+        latest_sma = sma.iloc[-1]  # SMA at T-1
 
-        above = total = 0
-        for ticker, intraday_price in current_prices.items():
-            if ticker not in latest_sma.index:
+        n_total = int(latest_sma.notna().sum())
+        n_above = 0
+        for ticker, sma_val in latest_sma.items():
+            if pd.isna(sma_val):
                 continue
-            sma_val = latest_sma[ticker]
-            if pd.isna(sma_val) or pd.isna(intraday_price):
+            px = current_prices.get(ticker)
+            if px is None or pd.isna(px):
                 continue
-            total += 1
-            if intraday_price > sma_val:
-                above += 1
-
-        pct = round((above / total) * 100.0, 2) if total else None
+            if px > sma_val:
+                n_above += 1
+        pct = round((n_above / n_total) * 100.0, 2) if n_total else None
         breadth[f"mbz{period}"] = pct
-        sample_size = max(sample_size, total)
+        sample_size = max(sample_size, n_total)
 
     breadth["sample_size"] = sample_size
     return breadth
 
 
-def compute_t_minus_1_eod_breadth(combined_path: Path, top100: list[str]) -> tuple[dict, "datetime.date | None"]:
+def compute_t_minus_1_eod_breadth(combined_path: Path) -> tuple[dict, "datetime.date | None"]:
     """% above SMA-N at T-1 EOD: close[T-1] vs SMA built from N closes ending T-1.
 
-    Returns (breadth_dict, t_minus_1_date). Uses the SAME SMA reference as the
-    intraday compute_breadth() so the T-1 anchor and intraday ticks plot on a
-    consistent series — only the price-being-compared differs (T-1 close vs
-    live intraday).
+    Numerically identical to the EOD chart's rightmost-1 column. Same
+    universe, same SMA, just close[T-1] as the comparison price.
     """
-    df = pd.read_csv(combined_path, encoding="utf-8-sig")
-    df["time"] = pd.to_datetime(df["time"], errors="coerce")
-    df = df.dropna(subset=["time", "ticker", "close"])
-    df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
-    df["close"] = pd.to_numeric(df["close"], errors="coerce")
-    df = df.dropna(subset=["close"])
-
-    wide = df.pivot_table(index="time", columns="ticker", values="close", aggfunc="last")
-    wide = wide.sort_index().ffill(limit=2)
-
-    today_dt = pd.Timestamp(datetime.now(ICT).date())
-    if today_dt in wide.index:
-        wide = wide.drop(today_dt)
-
-    if wide.empty:
+    prices = _build_eod_prices_frame(combined_path)
+    if prices.empty:
         return {f"mbz{p}": None for p in MA_PERIODS} | {"sample_size": 0}, None
 
-    t_minus_1_date = wide.index.max().date()
+    t_minus_1_date = prices.index.max().date()
 
     breadth: dict = {}
     sample_size = 0
     for period in MA_PERIODS:
-        sma = wide.rolling(period, min_periods=period).mean()
-        latest_sma = sma.iloc[-1]
-        latest_close = wide.iloc[-1]
-
-        above = total = 0
-        for ticker in top100:
-            if ticker not in latest_sma.index:
-                continue
-            sma_v = latest_sma[ticker]
-            px = latest_close[ticker]
-            if pd.isna(sma_v) or pd.isna(px):
-                continue
-            total += 1
-            if px > sma_v:
-                above += 1
-        pct = round((above / total) * 100.0, 2) if total else None
+        sma = prices.rolling(period, min_periods=period).mean()
+        above = (prices > sma)
+        n_above = int(above.iloc[-1].sum())
+        n_total = int(sma.iloc[-1].notna().sum())
+        pct = round((n_above / n_total) * 100.0, 2) if n_total else None
         breadth[f"mbz{period}"] = pct
-        sample_size = max(sample_size, total)
+        sample_size = max(sample_size, n_total)
 
     breadth["sample_size"] = sample_size
     return breadth, t_minus_1_date
@@ -292,9 +283,6 @@ def main() -> int:
         )
         return 0
 
-    tickers = read_top100_tickers()
-    LOGGER.info("Loaded %d top-100 tickers from %s", len(tickers), TICKERS_FILE.name)
-
     # Local override for testing: point INTRADAY_LOCAL_COMBINED at an existing combined_dataset.csv
     local_override = os.environ.get("INTRADAY_LOCAL_COMBINED")
     if local_override:
@@ -307,12 +295,18 @@ def main() -> int:
         LOGGER.info("Downloading SMA history from gs://%s/%s ...", GCS_BUCKET, GCS_COMBINED_KEY)
         download_combined_dataset(combined_local)
 
+    universe = get_breadth_universe(combined_local)
+    LOGGER.info(
+        "Universe: %d tickers from combined_dataset.csv (>=%d obs, excl VNINDEX) — matches EOD chart",
+        len(universe), MIN_OBS,
+    )
+
     LOGGER.info("Fetching current prices via Trading.price_board() ...")
-    current = fetch_current_prices(tickers)
-    LOGGER.info("Got prices for %d/%d tickers", len(current), len(tickers))
-    if len(current) < TOP_N // 2:
+    current = fetch_current_prices(universe)
+    LOGGER.info("Got prices for %d/%d tickers", len(current), len(universe))
+    if len(current) < len(universe) // 2:
         raise RuntimeError(
-            f"Only {len(current)} of {TOP_N} prices fetched — refusing to update breadth"
+            f"Only {len(current)} of {len(universe)} prices fetched — refusing to update breadth"
         )
 
     breadth = compute_breadth(combined_local, current)
@@ -323,7 +317,7 @@ def main() -> int:
         breadth.get("sample_size"),
     )
 
-    t_minus_1_breadth, t_minus_1_date = compute_t_minus_1_eod_breadth(combined_local, tickers)
+    t_minus_1_breadth, t_minus_1_date = compute_t_minus_1_eod_breadth(combined_local)
     t_minus_1_entry: dict | None = None
     if t_minus_1_date is not None:
         LOGGER.info(
