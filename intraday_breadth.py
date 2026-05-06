@@ -139,37 +139,39 @@ def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> di
     wide = df.pivot_table(index="time", columns="ticker", values="close", aggfunc="last")
     wide = wide.sort_index().ffill(limit=2)
 
-    # Append today's intraday "close" so SMA includes it
+    # Drop today's row if it somehow exists in the EOD frame (e.g. if the
+    # daily pipeline already ran today). The SMA must be built from CLOSED
+    # EOD days only; today's intraday price is the comparison value, never
+    # an input to the SMA itself.
     today_dt = pd.Timestamp(datetime.now(ICT).date())
-    if today_dt not in wide.index:
-        wide.loc[today_dt, :] = pd.NA
-    for ticker, price in current_prices.items():
-        if ticker in wide.columns:
-            wide.at[today_dt, ticker] = price
-    wide = wide.sort_index()
+    if today_dt in wide.index:
+        wide = wide.drop(today_dt)
 
     breadth: dict[str, float | int | None] = {}
+    sample_size = 0
     for period in MA_PERIODS:
+        # SMA = mean of the most recent N CLOSED EOD daily closes.
+        # latest_sma per ticker is the value of the SMA series on the last
+        # available EOD bar — i.e. the most recent fully closed day.
         sma = wide.rolling(period, min_periods=period).mean()
         latest_sma = sma.iloc[-1]
-        latest_price = wide.iloc[-1]
 
         above = total = 0
-        for ticker in current_prices.keys():
-            if ticker not in latest_sma.index or ticker not in latest_price.index:
+        for ticker, intraday_price in current_prices.items():
+            if ticker not in latest_sma.index:
                 continue
             sma_val = latest_sma[ticker]
-            px = latest_price[ticker]
-            if pd.isna(sma_val) or pd.isna(px):
+            if pd.isna(sma_val) or pd.isna(intraday_price):
                 continue
             total += 1
-            if px > sma_val:
+            if intraday_price > sma_val:
                 above += 1
 
         pct = round((above / total) * 100.0, 2) if total else None
         breadth[f"mbz{period}"] = pct
+        sample_size = max(sample_size, total)
 
-    breadth["sample_size"] = total  # last loop's total — consistent across periods given ffill
+    breadth["sample_size"] = sample_size
     return breadth
 
 
