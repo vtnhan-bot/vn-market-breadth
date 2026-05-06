@@ -35,7 +35,8 @@ GCS_COMBINED_KEY = "intraday/combined_dataset.csv"     # seeded by daily entrypo
 GCS_INTRADAY_KEY = "intraday_breadth.json"              # the live JSON the dashboard polls
 
 MA_PERIODS = [3, 5, 10, 20, 50, 200]
-MIN_OBS = 10  # EOD chart requires ≥10 daily observations per ticker (matches calculate_breadth)
+TOP_N = 100  # tickers.csv top-100 — the canonical breadth universe (intraday + EOD)
+MIN_OBS = 10  # tickers without enough history are excluded from breadth (matches EOD chart semantic)
 PRICE_DIVISOR = 1000.0  # vnstock prices are in raw VND; combined_dataset.csv is in 'thousand VND'
 
 # Trading-hour boundaries (ICT)
@@ -76,19 +77,17 @@ def is_trading_window(now_ict: datetime) -> bool:
     return False
 
 
-def get_breadth_universe(combined_path: Path) -> list[str]:
-    """Return the same universe the EOD breadth chart uses.
-
-    market_breadth.py:load_price_data_from_combined_dataset includes every
-    ticker in combined_dataset.csv with >= 10 daily observations, excluding
-    VNINDEX. We mirror that exactly so the intraday T-1 anchor matches the
-    EOD chart's rightmost-1 column number-for-number.
+def read_top100_tickers() -> list[str]:
+    """Read the top-100 universe from tickers.csv. This is the canonical
+    breadth universe — both the EOD breadth chart and the intraday breadth
+    chart compute against this exact same 100-ticker cohort.
     """
-    df = pd.read_csv(combined_path, encoding="utf-8-sig")
-    df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
-    df = df[df["ticker"] != "VNINDEX"]
-    counts = df.groupby("ticker").size()
-    return sorted(counts[counts >= MIN_OBS].index.tolist())
+    df = pd.read_csv(TICKERS_FILE)
+    if "Ticker" not in df.columns:
+        raise ValueError("tickers.csv must contain a 'Ticker' column.")
+    tickers = df["Ticker"].dropna().astype(str).str.strip()
+    tickers = [t for t in tickers if t and t.lower() != "nan"]
+    return tickers[:TOP_N]
 
 
 def fetch_current_prices(tickers: list[str]) -> dict[str, float]:
@@ -127,9 +126,10 @@ def download_combined_dataset(local_dst: Path) -> Path:
     return local_dst
 
 
-def _build_eod_prices_frame(combined_path: Path) -> pd.DataFrame:
-    """Reproduce calculate_breadth()'s prices DataFrame: every ticker in
-    combined_dataset.csv with >=10 obs, excluding VNINDEX, ffilled up to 2.
+def _build_eod_prices_frame(combined_path: Path, top100: list[str]) -> pd.DataFrame:
+    """Reproduce the EOD breadth chart's prices DataFrame, filtered to the
+    top-100 universe (tickers.csv). Tickers with <MIN_OBS observations are
+    dropped (matches calculate_breadth's >=10 obs filter).
     """
     df = pd.read_csv(combined_path, encoding="utf-8-sig")
     df["time"] = pd.to_datetime(df["time"], errors="coerce")
@@ -137,7 +137,8 @@ def _build_eod_prices_frame(combined_path: Path) -> pd.DataFrame:
     df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df = df.dropna(subset=["close"])
-    df = df[df["ticker"] != "VNINDEX"]
+    top100_set = {t.upper() for t in top100}
+    df = df[df["ticker"].isin(top100_set)]
 
     frames = []
     for tkr, sub in df.groupby("ticker"):
@@ -156,15 +157,15 @@ def _build_eod_prices_frame(combined_path: Path) -> pd.DataFrame:
     return prices
 
 
-def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> dict[str, float | int | None]:
-    """% of universe with intraday_price > SMA-N(close[T-N+1..T-1]).
+def compute_breadth(combined_path: Path, top100: list[str], current_prices: dict[str, float]) -> dict[str, float | int | None]:
+    """% of top-100 with intraday_price > SMA-N(close[T-N+1..T-1]).
 
-    Universe & SMA construction match the EOD chart's calculate_breadth()
-    exactly: every ticker in combined_dataset.csv with >=10 daily observations,
-    excluding VNINDEX. The SMA reference is frozen at T-1 (yesterday's close);
-    only the price being compared changes between intraday ticks.
+    Universe = tickers.csv top-100 (same as EOD breadth chart). SMA is frozen
+    at T-1 (yesterday's close); only the price being compared changes between
+    intraday ticks. Tickers without an intraday price contribute neither to
+    the numerator nor the denominator.
     """
-    prices = _build_eod_prices_frame(combined_path)
+    prices = _build_eod_prices_frame(combined_path, top100)
     if prices.empty:
         return {f"mbz{p}": None for p in MA_PERIODS} | {"sample_size": 0}
 
@@ -192,13 +193,14 @@ def compute_breadth(combined_path: Path, current_prices: dict[str, float]) -> di
     return breadth
 
 
-def compute_t_minus_1_eod_breadth(combined_path: Path) -> tuple[dict, "datetime.date | None"]:
+def compute_t_minus_1_eod_breadth(combined_path: Path, top100: list[str]) -> tuple[dict, "datetime.date | None"]:
     """% above SMA-N at T-1 EOD: close[T-1] vs SMA built from N closes ending T-1.
 
     Numerically identical to the EOD chart's rightmost-1 column. Same
-    universe, same SMA, just close[T-1] as the comparison price.
+    universe (tickers.csv top-100), same SMA, just close[T-1] as the
+    comparison price.
     """
-    prices = _build_eod_prices_frame(combined_path)
+    prices = _build_eod_prices_frame(combined_path, top100)
     if prices.empty:
         return {f"mbz{p}": None for p in MA_PERIODS} | {"sample_size": 0}, None
 
@@ -295,21 +297,21 @@ def main() -> int:
         LOGGER.info("Downloading SMA history from gs://%s/%s ...", GCS_BUCKET, GCS_COMBINED_KEY)
         download_combined_dataset(combined_local)
 
-    universe = get_breadth_universe(combined_local)
+    top100 = read_top100_tickers()
     LOGGER.info(
-        "Universe: %d tickers from combined_dataset.csv (>=%d obs, excl VNINDEX) — matches EOD chart",
-        len(universe), MIN_OBS,
+        "Universe: top-100 from %s (canonical breadth universe — matches EOD chart)",
+        TICKERS_FILE.name,
     )
 
     LOGGER.info("Fetching current prices via Trading.price_board() ...")
-    current = fetch_current_prices(universe)
-    LOGGER.info("Got prices for %d/%d tickers", len(current), len(universe))
-    if len(current) < len(universe) // 2:
+    current = fetch_current_prices(top100)
+    LOGGER.info("Got prices for %d/%d tickers", len(current), len(top100))
+    if len(current) < TOP_N // 2:
         raise RuntimeError(
-            f"Only {len(current)} of {len(universe)} prices fetched — refusing to update breadth"
+            f"Only {len(current)} of {TOP_N} prices fetched — refusing to update breadth"
         )
 
-    breadth = compute_breadth(combined_local, current)
+    breadth = compute_breadth(combined_local, top100, current)
     LOGGER.info(
         "Intraday: mbz3=%s mbz5=%s mbz10=%s mbz20=%s mbz50=%s mbz200=%s n=%s",
         breadth.get("mbz3"), breadth.get("mbz5"), breadth.get("mbz10"),
@@ -317,7 +319,7 @@ def main() -> int:
         breadth.get("sample_size"),
     )
 
-    t_minus_1_breadth, t_minus_1_date = compute_t_minus_1_eod_breadth(combined_local)
+    t_minus_1_breadth, t_minus_1_date = compute_t_minus_1_eod_breadth(combined_local, top100)
     t_minus_1_entry: dict | None = None
     if t_minus_1_date is not None:
         LOGGER.info(

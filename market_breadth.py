@@ -1839,7 +1839,13 @@ def main():
         audit_future = audit_exporter.submit(audit_rows, active_tickers, run_ts)
 
         log("Calculating breadth indicators ...")
-        breadth = calculate_breadth(price_data, SESSIONS_SHOW)
+        # Breadth is computed strictly over tickers.csv (top-100) — NOT the
+        # broader 230-ticker unified universe in combined_dataset.csv. The
+        # unified universe is for RS / pre-breakout coverage; the breadth
+        # chart is intentionally a top-100 reading.
+        breadth_price_data = {t: price_data[t] for t in tickers if t in price_data}
+        log(f"Breadth universe filtered to top-100: {len(breadth_price_data)} of {len(tickers)} tickers in price_data")
+        breadth = calculate_breadth(breadth_price_data, SESSIONS_SHOW)
         log(f"Breadth matrix: {breadth.shape[0]} sessions x {breadth.shape[1]} indicators")
 
         log("Generating analysis ...")
