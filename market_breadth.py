@@ -1711,7 +1711,7 @@ if (rsSearchCrypto) {{
 // ── Intraday breadth chart: fetch JSON every 60s, redraw Plotly ────────
 const INTRADAY_JSON_URL = 'https://storage.googleapis.com/vn-market-breadth/intraday_breadth.json';
 const INTRADAY_MA_PERIODS = [3, 5, 10, 20, 50, 200];
-const INTRADAY_MA_COLORS = {{3:'#00BCD4',5:'#FFA726',10:'#43A047',20:'#1E88E5',50:'#8E24AA',200:'#E53935'}};
+const INTRADAY_MA_COLORS = {{3:'#00BCD4',5:'#FFA726',10:'#43A047',20:'#9C27B0',50:'#000000',200:'#E53935'}};
 
 function renderIntradayBreadth(doc) {{
   const eodHistory = (doc && doc.eod_history) || [];
