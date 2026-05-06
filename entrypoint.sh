@@ -46,6 +46,24 @@ blob.upload_from_filename("market_breadth.html", content_type="text/html")
 print("Chart uploaded: https://storage.googleapis.com/vn-market-breadth/index.html")
 PYEOF
 
+# 4b) Persist today's combined_dataset.csv to GCS so the intraday-breadth job
+#     can read SMA history without re-fetching the full top-100 each tick.
+echo "Persisting combined_dataset.csv for intraday job..."
+python3 - <<'PYEOF'
+import glob, os
+from google.cloud import storage
+candidates = sorted(glob.glob("data/*/combined_dataset.csv"))
+if not candidates:
+    print("No combined_dataset.csv found — skipping intraday seeding")
+else:
+    latest = candidates[-1]
+    client = storage.Client()
+    blob = client.bucket("vn-market-breadth").blob("intraday/combined_dataset.csv")
+    blob.cache_control = "no-cache, no-store, must-revalidate"
+    blob.upload_from_filename(latest, content_type="text/csv")
+    print(f"Seeded gs://vn-market-breadth/intraday/combined_dataset.csv from {latest} ({os.path.getsize(latest):,} bytes)")
+PYEOF
+
 # 5) Persist cache/ back to GCS (recursive — keeps daily incremental fetches fast)
 echo "Saving cache to GCS..."
 python3 - <<'PYEOF'

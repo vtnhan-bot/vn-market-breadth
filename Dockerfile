@@ -26,6 +26,7 @@ COPY run_daily_update.py \
      pre_breakout.py \
      _patch_pre_breakout.py \
      _patch_us_charts.py \
+     intraday_breadth.py \
      ./
 
 # Bootstrap input CSVs (read by the pipeline scripts on day 1)

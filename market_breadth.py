@@ -1459,6 +1459,18 @@ def build_html(
 
   <div id="chart"></div>
 
+  <div class="panel" style="background:#fff;border:1px solid #e0d8cc;">
+    <h2>📡 Độ rộng intraday <span class="tag">Cập nhật mỗi 15 phút</span></h2>
+    <div id="intraday-status" style="font-size:0.85rem;color:#666;margin-bottom:8px">
+      <span id="intraday-update-time">Đang tải...</span>
+      <span id="intraday-tick-count" style="margin-left:12px;color:#888"></span>
+    </div>
+    <div id="intraday-chart" style="min-height:300px"></div>
+    <div style="font-size:0.78rem;color:#888;margin-top:6px;font-style:italic">
+      % Top-100 trên SMA-N tại từng tick 15 phút trong phiên (giờ Việt Nam) — phiên sáng 09:30–11:30, phiên chiều 13:00–14:45.
+    </div>
+  </div>
+
   <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
 
   <div id="vix-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
@@ -1695,6 +1707,61 @@ if (rsSearchCrypto) {{
     }});
   }});
 }}
+
+// ── Intraday breadth chart: fetch JSON every 60s, redraw Plotly ────────
+const INTRADAY_JSON_URL = 'https://storage.googleapis.com/vn-market-breadth/intraday_breadth.json';
+const INTRADAY_MA_PERIODS = [3, 5, 10, 20, 50, 200];
+const INTRADAY_MA_COLORS = {{3:'#00BCD4',5:'#FFA726',10:'#43A047',20:'#1E88E5',50:'#8E24AA',200:'#E53935'}};
+
+function renderIntradayBreadth(doc) {{
+  const updates = (doc && doc.updates) || [];
+  const status = document.getElementById('intraday-update-time');
+  const tickEl = document.getElementById('intraday-tick-count');
+  if (!updates.length) {{
+    status.textContent = 'Chưa có dữ liệu intraday cho hôm nay (' + (doc.date || '—') + ').';
+    tickEl.textContent = '';
+    Plotly.purge('intraday-chart');
+    return;
+  }}
+  const lastUpdated = doc.last_updated_ict || updates[updates.length - 1].time;
+  status.textContent = 'Cập nhật lúc ' + lastUpdated + ' (giờ Việt Nam, ngày ' + doc.date + ')';
+  tickEl.textContent = updates.length + ' tick' + (updates.length === 1 ? '' : 's') + ' hôm nay';
+
+  const x = updates.map(u => u.time);
+  const traces = INTRADAY_MA_PERIODS.map(p => ({{
+    x: x,
+    y: updates.map(u => (u['mbz' + p] === null || u['mbz' + p] === undefined) ? null : u['mbz' + p]),
+    mode: 'lines+markers',
+    name: 'mbz' + p,
+    line: {{color: INTRADAY_MA_COLORS[p], width: p === 50 ? 3 : 2}},
+    marker: {{size: 5}},
+  }}));
+  const layout = {{
+    margin: {{t: 24, l: 48, r: 24, b: 36}},
+    xaxis: {{title: 'Giờ Việt Nam', tickangle: 0}},
+    yaxis: {{title: '% trên SMA', range: [0, 100], ticksuffix: '%'}},
+    legend: {{orientation: 'h', y: -0.18}},
+    paper_bgcolor: '#fff',
+    plot_bgcolor: '#fafafa',
+    height: 320,
+  }};
+  Plotly.react('intraday-chart', traces, layout, {{displayModeBar: false}});
+}}
+
+async function pollIntraday() {{
+  try {{
+    const res = await fetch(INTRADAY_JSON_URL + '?_=' + Date.now(), {{cache: 'no-store'}});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const doc = await res.json();
+    renderIntradayBreadth(doc);
+  }} catch (err) {{
+    const status = document.getElementById('intraday-update-time');
+    if (status) status.textContent = 'Không tải được dữ liệu intraday: ' + err.message;
+  }}
+}}
+
+pollIntraday();
+setInterval(pollIntraday, 60 * 1000);
 </script>
 </body>
 </html>
