@@ -1731,14 +1731,23 @@ function renderIntradayBreadth(doc) {{
   tickEl.textContent = eodHistory.length + ' phiên EOD + ' + intradayCount + ' tick intraday hôm nay';
 
   const x = allPoints.map(u => u.time);
-  const traces = INTRADAY_MA_PERIODS.map(p => ({{
-    x: x,
-    y: allPoints.map(u => (u['mbz' + p] === null || u['mbz' + p] === undefined) ? null : u['mbz' + p]),
-    mode: 'lines+markers',
-    name: 'mbz' + p,
-    line: {{color: INTRADAY_MA_COLORS[p], width: p === 50 ? 3 : 2}},
-    marker: {{size: 4}},
-  }}));
+  // Match EOD chart styling exactly: same colors, dotted lines for mbz3/mbz5,
+  // wider line for mbz50, marker color matches line, no gap-bridging.
+  const maKey = (p) => 'mbz' + (p < 100 ? String(p).padStart(2, '0') : p);
+  const traces = INTRADAY_MA_PERIODS.map(p => {{
+    const color = INTRADAY_MA_COLORS[p];
+    const lineStyle = {{color: color, width: p === 50 ? 4 : 2}};
+    if (p === 3 || p === 5) lineStyle.dash = 'dot';
+    return {{
+      x: x,
+      y: allPoints.map(u => (u['mbz' + p] === null || u['mbz' + p] === undefined) ? null : u['mbz' + p]),
+      mode: 'lines+markers',
+      name: maKey(p),
+      line: lineStyle,
+      marker: {{size: 4, color: color}},
+      connectgaps: false,
+    }};
+  }});
   const layout = {{
     margin: {{t: 24, l: 48, r: 24, b: 36}},
     xaxis: {{type: 'category', title: 'Phiên / Giờ Việt Nam', tickangle: -45, automargin: true, tickfont: {{size: 9}}}},
