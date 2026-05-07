@@ -1714,21 +1714,26 @@ const INTRADAY_MA_PERIODS = [3, 5, 10, 20, 50, 200];
 const INTRADAY_MA_COLORS = {{3:'#00BCD4',5:'#FFA726',10:'#43A047',20:'#9C27B0',50:'#000000',200:'#E53935'}};
 
 function renderIntradayBreadth(doc) {{
-  const eodHistory = (doc && doc.eod_history) || [];
+  const eodHistoryRaw = (doc && doc.eod_history) || [];
   const updates = (doc && doc.updates) || [];
   const status = document.getElementById('intraday-update-time');
   const tickEl = document.getElementById('intraday-tick-count');
-  const allPoints = eodHistory.concat(updates);  // 50 EOD days + today's ticks
+  // Chart contract: last 49 EOD days + 1 latest intraday tick = 50 points total.
+  // (eod_history may contain more; we always slice to last 49 for visual consistency.)
+  const eodHistory = eodHistoryRaw.slice(-49);
+  // Show only the LATEST intraday tick — earlier intraday ticks today remain
+  // in the JSON for audit but aren't plotted.
+  const latestUpdate = updates.length ? updates[updates.length - 1] : null;
+  const allPoints = latestUpdate ? eodHistory.concat([latestUpdate]) : eodHistory.slice();
   if (!allPoints.length) {{
     status.textContent = 'Chưa có dữ liệu cho hôm nay (' + (doc.date || '—') + ').';
     tickEl.textContent = '';
     Plotly.purge('intraday-chart');
     return;
   }}
-  const intradayCount = updates.length;
   const lastUpdated = doc.last_updated_ict || '—';
   status.textContent = 'Cập nhật lúc ' + lastUpdated + ' (giờ Việt Nam, ngày ' + doc.date + ')';
-  tickEl.textContent = eodHistory.length + ' phiên EOD + ' + intradayCount + ' tick intraday hôm nay';
+  tickEl.textContent = eodHistory.length + ' phiên EOD + ' + (latestUpdate ? '1 điểm intraday (' + latestUpdate.time + ')' : 'chưa có intraday');
 
   const x = allPoints.map(u => u.time);
   // Match EOD chart styling exactly: same colors, dotted lines for mbz3/mbz5,

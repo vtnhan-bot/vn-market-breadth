@@ -37,7 +37,7 @@ GCS_INTRADAY_KEY = "intraday_breadth.json"              # the live JSON the dash
 MA_PERIODS = [3, 5, 10, 20, 50, 200]
 TOP_N = 100  # tickers.csv top-100 — the canonical breadth universe (intraday + EOD)
 MIN_OBS = 10  # tickers without enough history are excluded from breadth (matches EOD chart semantic)
-EOD_HISTORY_SESSIONS = 50  # how many EOD days to include in the intraday chart's left side
+EOD_HISTORY_SESSIONS = 49  # 49 EOD days + 1 latest intraday tick = 50 total chart points
 PRICE_DIVISOR = 1000.0  # vnstock prices are in raw VND; combined_dataset.csv is in 'thousand VND'
 
 # Trading-hour boundaries (ICT)
