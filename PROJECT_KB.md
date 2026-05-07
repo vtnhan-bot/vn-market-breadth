@@ -2,7 +2,14 @@
 
 > **Purpose**: a single document that lets a senior engineer (or a future Claude session) get from cold-start to confidently shipping changes in under 30 minutes. Read this first; it points you at everything else.
 >
-> **Last refresh**: 2026-04-29 (after the full-pipeline cloud deployment landed).
+> **Last refresh**: 2026-05-07 (after the intraday-breadth + crypto-RS shipment).
+>
+> **Topic deep-dives** in [`docs/`](docs/):
+> - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling).
+> - [`docs/RS_AND_PREBREAKOUT.md`](docs/RS_AND_PREBREAKOUT.md) — composite RS Rating formula + pre-breakout signal layers.
+> - [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md) — top-50 crypto vs BTC heatmap, UTC-vs-ICT timing.
+> - [`docs/UNIVERSES.md`](docs/UNIVERSES.md) — which ticker file is used where, and why breadth ≠ RS universe.
+> - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — manual triggers, image refresh, common diagnostic recipes.
 
 ---
 
@@ -10,15 +17,16 @@
 
 | Item | Value |
 |---|---|
-| One-liner | Daily Vietnam-equity dashboard with US macro references (VIX, Nasdaq) and pre-breakout signal scanner. |
+| One-liner | Daily VN-equity dashboard + intraday breadth + US macro (VIX, Nasdaq) + pre-breakout scanner + crypto RS heatmap. |
 | Live URL | https://storage.googleapis.com/vn-market-breadth/index.html |
-| Refresh cadence | Weekdays 15:30 Asia/Ho_Chi_Minh (08:30 UTC), automated end-to-end |
+| Daily refresh | Weekdays 15:30 ICT (after VN market close at 14:45) — full pipeline rebuild |
+| Intraday refresh | Weekdays every 15 min during 09:30–11:30 / 13:00–14:45 ICT — breadth panel only |
 | Repo | https://github.com/vtnhan-bot/vn-market-breadth (master) |
 | Local working dir | `D:\Claude\Market on website` (Windows) |
 | GCP project | `project-feb6df0e-9749-4925-b4e` (region `asia-southeast1`) |
 | GCS bucket | `vn-market-breadth` |
-| Cloud Run job | `market-breadth-job` |
-| Cloud Scheduler | `market-breadth-schedule` (cron `30 15 * * 1-5`, TZ Asia/Ho_Chi_Minh) |
+| Cloud Run jobs | `market-breadth-job` (daily), `intraday-breadth-job` (every 15 min during VN trading hours) |
+| Cloud Scheduler | `market-breadth-schedule` `30 15 * * 1-5` ICT; `intraday-breadth-schedule` `*/15 9-14 * * 1-5` ICT |
 | Primary user | CTO / portfolio manager — visits the URL daily, makes trade decisions from it |
 
 ---
@@ -27,17 +35,20 @@
 
 The page (`market_breadth.html`) is built by `market_breadth.py` and uploaded to GCS as `index.html`.
 
-1. **Breadth chart** — % of top-100 HOSE+HNX stocks above SMA-3/5/10/20/50/200 over the last 50 sessions. Six lines on one plot. The headline indicator.
-2. **VNINDEX 50-session candlestick** with volume.
-3. **CBOE VIX — 100 phiên** candlestick (yfinance `^VIX`).
-4. **Nasdaq Composite — 100 phiên** candlestick (yfinance `^IXIC`).
-5. **Breadth detail tables** — current SMA-N readings + day/week deltas, and a composite gauge with a Vietnamese-language verdict ("THẬN TRỌNG" / "TÍCH CỰC" / etc.).
-6. **🚀 Pre-breakout panel** *(new — Apr 2026)* — two-layer scanner over the RS monitor universe:
-   - **Layer A (RS Line Divergence)**: stocks whose RS Line (`close / vnindex_close`) is at a 252-day high while price is still ≤ 95% of its 252-day high → relative strength is leading, price is still in a base.
-   - **Layer B (RS_Ratio + BB Squeeze)**: stocks where Mansfield ratio `(1 + stock_6mo_return) / (1 + vni_6mo_return) > 1.20` **and** Bollinger Band(20, 2σ) width is in the bottom 20% of its trailing 126-session distribution.
-   - Each layer has a "🔥 Triggered" list (strict criteria) and a "👀 Watch" list (10 closest-to-trigger candidates).
+1. **EOD Breadth chart** — % of top-100 HOSE+HNX stocks above SMA-3/5/10/20/50/200 over the last 50 sessions. Six lines, line widths/dashes per the shared color scheme. The headline indicator. Universe = `tickers.csv`.
+2. **📡 Intraday breadth chart** *(new — May 2026)* — same 6 MA periods, same top-100 universe, same color/style as the EOD chart. Shows 49 EOD days ending T-1 + 1 live intraday point at the rightmost, refreshed every 15 min during VN trading hours via JS polling of `gs://vn-market-breadth/intraday_breadth.json`. See [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md).
+3. **VNINDEX 50-session candlestick** with volume.
+4. **CBOE VIX — 100 phiên** candlestick (yfinance `^VIX`).
+5. **Nasdaq Composite — 100 phiên** candlestick (yfinance `^IXIC`).
+6. **Breadth detail tables** — current SMA-N readings + day/week deltas, and a composite gauge with a Vietnamese-language verdict ("THẬN TRỌNG" / "TÍCH CỰC" / etc.).
+7. **🚀 Pre-breakout panel** — two-layer scanner over the unified RS universe (`rs_fixed_tickers.csv`, ~230 names), now **gated on the composite RS Rating** from the matrix (replaces the older Mansfield/RS-line constructions):
+   - **Layer A**: `rs_rating ≥ 90` AND `price ≤ 95% of 252-d high` (in base).
+   - **Layer B**: `rs_rating ≥ 90` AND BB(20, 2σ) width in bottom 20% of trailing 126-session distribution (squeeze).
+   - Watch lists relax to `rs_rating ≥ 80`.
    - Highlighted "⭐ Both" block at the top when a ticker passes both layers.
-7. **RS Heatmap** — 90-day Mansfield-style RS percentile vs. VNINDEX, last 19 sessions × 170 institutional tickers, color-coded leader/strong/neutral/laggard.
+   - See [`docs/RS_AND_PREBREAKOUT.md`](docs/RS_AND_PREBREAKOUT.md) for the rs_rating formula.
+8. **Relative Strength Heatmap (Institutional 3T)** — composite RS Rating (1–99) per ticker per session, last 20 sessions × ~230 tickers. Composite blend = **30% RS + 70% momentum** (changed from 50/50 in May 2026).
+9. **Relative Strength Heatmap — Crypto** *(new — May 2026)* — top-50 cryptos vs BTC, same composite formula, displayed below the VN heatmap. Closed-candle convention: rightmost column is always the UTC daily bar that closed at 07:00 ICT today, never an in-progress partial. See [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md).
 
 ---
 
@@ -85,16 +96,21 @@ The public URL is just `gs://vn-market-breadth/index.html` exposed via GCS publi
 
 ## 4. The daily pipeline (`run_daily_update.py`)
 
-Four sequential stages. Each is a standalone script that can be run individually for local debugging.
+Five sequential stages. Each is a standalone script that can be run individually for local debugging.
 
 | # | Script | What it does | Reads | Writes |
 |---|---|---|---|---|
-| 1 | `eod_batch_downloader.py` | Fetches today's EOD bar for top-100 tickers via vnstock (KBS source) with rate-limit pacing. | `tickers.csv`, `cache/*.pkl` | `data/<today>/*.csv`, `data/<today>/combined_dataset.csv` |
-| 2 | `rs_universe_generator.py` | Refreshes the 200-ticker RS universe from `institutional_universe_3T.csv` plus drift detection. | `institutional_universe_3T.csv`, `rs_fixed_tickers.csv`, `cache/rs_history/*.csv` | `rs_universe.csv`, `logs/universe_drift_latest.txt` |
-| 3 | `rs_matrix_3T.py` | Computes 90-day Mansfield RS percentiles for the 170-ticker fixed universe over the last 19 sessions. | `rs_fixed_tickers.csv`, `cache/rs_history/*.csv` | `rs_matrix_3T.csv` |
-| 4 | `market_breadth.py` | Computes mbz3/5/10/20/50/200, fetches yfinance VIX + Nasdaq, builds HTML with all panels, then calls `_patch_pre_breakout` to inject Layer A/B. | `data/<today>/combined_dataset.csv`, `rs_matrix_3T.csv`, `rs_universe.csv` | `market_breadth.html` |
+| 1 | `eod_batch_downloader.py` | Fetches today's EOD bar for the unified universe (`rs_fixed_tickers.csv` ≈ 230 tickers) via vnstock with rate-limit pacing. | `rs_fixed_tickers.csv`, `cache/*.pkl` | `data/<today>/*.csv`, `data/<today>/combined_dataset.csv` |
+| 2 | `rs_universe_generator.py` | Drift detector — diffs `institutional_universe_3T.csv` (172) vs `rs_fixed_tickers.csv` (230). Reports only; never modifies the locked universe (would wipe the 58 manual additions). | `institutional_universe_3T.csv`, `rs_fixed_tickers.csv` | `logs/universe_drift_*.txt` |
+| 3 | `rs_matrix_3T.py` | Composite RS Rating (1–99): 30% relative-performance percentile + 70% weighted-momentum percentile, last 20 sessions × ~230 tickers. | `rs_fixed_tickers.csv`, `cache/rs_history/*.csv` | `rs_matrix_3T.csv` |
+| 4 | `rs_matrix_crypto.py` *(new May 2026)* | Same composite formula, but for top-50 cryptos vs BTC. Drops in-progress UTC daily bar so rightmost is always the candle that closed at 07:00 ICT. | `crypto_universe.csv`, `cache/rs_history_crypto/*.csv` | `rs_matrix_crypto.csv` |
+| 5 | `market_breadth.py` | Builds HTML: EOD breadth chart (top-100 only), VNINDEX/VIX/Nasdaq candlesticks, breadth detail tables, RS heatmap (VN), RS heatmap (Crypto), pre-breakout panel via `_patch_pre_breakout`, intraday-chart container + JS poller. | `data/<today>/combined_dataset.csv`, `rs_matrix_3T.csv`, `rs_matrix_crypto.csv`, `rs_fixed_tickers.csv`, `tickers.csv` | `market_breadth.html` |
 
-A successful run produces a single self-contained `market_breadth.html` (~2 MB, all data inlined as JSON in `<script>` blocks).
+A successful run produces a single self-contained `market_breadth.html` (~750 KB) and persists `combined_dataset.csv` to `gs://vn-market-breadth/intraday/combined_dataset.csv` for the intraday job to consume.
+
+### Intraday pipeline (separate Cloud Run job)
+
+`intraday_breadth.py` runs every 15 min during VN trading hours via `intraday-breadth-schedule`. It reads the latest `combined_dataset.csv` from GCS, fetches live prices via `vnstock.Trading.price_board()`, computes `% top-100 above SMA-N` (SMA built from N closed days ending T-1), and writes to `gs://vn-market-breadth/intraday_breadth.json`. The dashboard's intraday panel polls this JSON every 60s. Full design in [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md).
 
 ### Freshness gate
 `market_breadth.py` will **abort with `"CRITICAL: EOD Data Not Fresh"`** if `combined_dataset.csv` was modified before **15:30 ICT today**. This is intentional — guarantees no run ships yesterday's prices as today's. The scheduler is therefore set to fire at 15:30 ICT exactly so the downloader writes fresh data right before the gate check.
@@ -106,29 +122,45 @@ At the very end of `market_breadth.py main()`, after `build_html()` writes the H
 
 ## 5. Cloud infrastructure reference
 
-### 5.1 Cloud Run Job
+### 5.1 Cloud Run Jobs
 
 ```
-Name:      market-breadth-job
-Region:    asia-southeast1
-Image:     asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest
-Resources: cpu=2, memory=2Gi, task-timeout=15m, max-retries=1
-Service account: 746287134716-compute@developer.gserviceaccount.com
-Env vars:
-  - GITHUB_ACTIONS=true     (suppresses browser open + Excel ticker source)
-  - VNSTOCK_API_KEY         (mounted from Secret Manager: vnstock-api-key:latest)
+market-breadth-job            (daily full pipeline)
+  Region:        asia-southeast1
+  Image:         …/market-breadth:latest
+  Resources:     cpu=2, memory=2Gi, task-timeout=15m, max-retries=1
+  Command:       (default — bash entrypoint.sh runs run_daily_update.py)
+  Env: GITHUB_ACTIONS=true, VNSTOCK_API_KEY (Secret Manager)
+
+intraday-breadth-job          (15-min intraday tick)
+  Region:        asia-southeast1
+  Image:         …/market-breadth:latest  (same image, different command)
+  Resources:     cpu=1, memory=512Mi, task-timeout=120s, max-retries=1
+  Command:       python3 intraday_breadth.py
+  Env: GITHUB_ACTIONS=true, VNSTOCK_API_KEY (Secret Manager)
 ```
+
+Both jobs are pinned to the `:latest` tag. The GHA workflow's two `gcloud run jobs update` steps (one per job) re-resolve the digest after every Cloud Build so new code reaches both jobs automatically.
 
 ### 5.2 Cloud Scheduler
 
 ```
-Name:           market-breadth-schedule
-Cron:           30 15 * * 1-5
-Timezone:       Asia/Ho_Chi_Minh
-Target:         POST  https://asia-southeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/.../jobs/market-breadth-job:run
-Auth:           OAuth (service account: github-deploy@…iam.gserviceaccount.com)
-Attempt deadline: 180s   (just to start the job — the job's own timeout is 15 min)
+market-breadth-schedule       (daily)
+  Cron:          30 15 * * 1-5     (15:30 ICT, weekdays)
+  Timezone:      Asia/Ho_Chi_Minh
+  Target:        POST  …/jobs/market-breadth-job:run
+  Auth:          OAuth (github-deploy@…)
+  Deadline:      180s
+
+intraday-breadth-schedule     (15-min intraday)
+  Cron:          */15 9-14 * * 1-5    (every 15 min, 09:00–14:59 ICT, weekdays)
+  Timezone:      Asia/Ho_Chi_Minh
+  Target:        POST  …/jobs/intraday-breadth-job:run
+  Auth:          OAuth (github-deploy@…)
+  Deadline:      180s
 ```
+
+The 09:00 / 09:15 / 11:45 / 12:00 / 12:15 / 12:30 / 12:45 fires hit the cron range but the script's own time-window check (09:30–11:30 / 13:00–14:45 ICT) no-ops them silently. Net: 17 actual compute ticks per trading day.
 
 ### 5.3 Secret Manager
 
@@ -144,10 +176,14 @@ Access:       roles/secretmanager.secretAccessor granted to 746287134716-compute
 
 ```
 gs://vn-market-breadth/
-├── index.html              ← public dashboard (Cache-Control: no-cache, no-store, must-revalidate)
-└── cache/                  ← incremental-fetch cache, restored at job start, persisted at job end
-    ├── *.pkl               ← per-ticker breadth pickles
-    ├── rs_history/*.csv    ← per-ticker history for RS universe (~234 tickers)
+├── index.html                       ← public dashboard (no-cache headers)
+├── intraday_breadth.json            ← live JSON the dashboard polls (no-cache headers)
+├── intraday/
+│   └── combined_dataset.csv         ← daily-pipeline-persisted EOD CSV; intraday job reads this
+└── cache/                           ← incremental-fetch cache, restored at job start, persisted at job end
+    ├── *.pkl                        ← per-ticker breadth pickles
+    ├── rs_history/*.csv             ← per-ticker history for VN RS matrix (~234 tickers)
+    ├── rs_history_crypto/*.csv      ← per-coin history for crypto RS matrix (~50 coins)
     └── rs_company_overview_cache.csv
 ```
 
@@ -158,11 +194,14 @@ Workflow:  .github/workflows/update_chart.yml
 Triggers:  push to master, manual dispatch
 Steps:
   1. Auth to GCP via Workload Identity Federation
-  2. gcloud builds submit  →  pushes :latest to Artifact Registry
-  3. gcloud run jobs update --image …:latest
+  2. gcloud builds submit              →  pushes :latest to Artifact Registry
+  3. gcloud run jobs update market-breadth-job   --image …:latest
+  4. gcloud run jobs update intraday-breadth-job --image …:latest
 ```
 
 The workflow occasionally reports false-failure on the `gcloud builds submit` step due to async log streaming — verify by checking `gcloud builds list --region=asia-southeast1`. If the build itself shows `SUCCESS`, the deployment is fine.
+
+If GHA fails to fire after a push (rare but observed once), the workaround is `gcloud builds submit` directly; see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ---
 
@@ -228,57 +267,101 @@ python run_daily_update.py
 
 ## 7. Configuration reference (the "magic numbers")
 
+### Breadth (top-100 universe)
+
 | Setting | Value | Where | Why |
 |---|---|---|---|
-| `SESSIONS_SHOW` (breadth window) | 50 | `market_breadth.py` | Headline chart length |
-| `US_INDEX_SESSIONS` | 100 | `market_breadth.py` | VIX & Nasdaq lookback |
-| `MA_PERIODS` | `[3, 5, 10, 20, 50, 200]` | `market_breadth.py` | mbz lines on the breadth chart |
-| `freshness_cutoff` | 15:30 ICT | `market_breadth.py:96` | Aborts run if data older than this |
-| `API_CALL_DELAY_SECONDS` | 1.1 | `eod_batch_downloader.py` | Stays under 60 req/min (community tier) |
-| `API_SOURCES` | `["KBS", "VCI", "MSN", "FMP"]` | `eod_batch_downloader.py` | vnstock 3.5+ supported sources (SSI/VND removed) |
+| `SESSIONS_SHOW` (EOD breadth window) | 50 | `market_breadth.py` | Headline chart length |
+| `MA_PERIODS` | `[3, 5, 10, 20, 50, 200]` | shared | mbz lines on both EOD + intraday charts |
+| `MA_COLORS` | cyan/orange/green/purple/black/red | `market_breadth.py:50` | mbz03/05 dotted, mbz50 width 4 (bold black), others width 2 |
+| `EOD_HISTORY_SESSIONS` (intraday chart) | 49 | `intraday_breadth.py` | 49 EOD + 1 latest intraday point = 50 total chart points |
+| `TOP_N` (intraday breadth universe) | 100 | `intraday_breadth.py` | Top-100 from `tickers.csv` — same as EOD chart |
+| `MIN_OBS` | 10 | `intraday_breadth.py` | Tickers with <10 daily obs excluded (matches EOD `calculate_breadth`) |
+| Trading-window | 09:30–11:30 / 13:00–14:45 ICT | `intraday_breadth.py` | VN session hours minus ATO/ATC/lunch |
+| `freshness_cutoff` | 15:30 ICT | `market_breadth.py` | Aborts daily run if `combined_dataset.csv` older than this |
+
+### RS / Pre-breakout (~230-ticker unified universe)
+
+| Setting | Value | Where | Why |
+|---|---|---|---|
+| RS composite blend | 30% RS + 70% momentum | `rs_matrix_3T.py:243-244` | Tuned May 2026 from 50/50 |
+| `RS_LOOKBACK_CALENDAR_DAYS` | 90 | `rs_source2.py` | Pure-RS lookback |
+| `RS_RATING_TRIGGER` | 90 | `pre_breakout.py` | Strict pre-breakout trigger (top 10%) |
+| `RS_RATING_WATCH` | 80 | `pre_breakout.py` | Watch-list threshold (top 20%) |
 | `WINDOW_52W` | 252 | `pre_breakout.py` | Layer A rolling-max window |
-| `RS_HIGH_TOL` | 0.99 | `pre_breakout.py` | "RS at high" if ≥ 99% of 252-d max |
 | `PRICE_BASE_MAX` | 0.95 | `pre_breakout.py` | "In a base" if price ≤ 95% of 252-d high |
-| `RETURN_LOOKBACK` | 126 | `pre_breakout.py` | ~6 months for Mansfield ratio |
-| `RS_RATIO_THRESH` | 1.20 | `pre_breakout.py` | Layer B trigger threshold |
 | `BB_PERIOD`, `BB_K` | 20, 2.0 | `pre_breakout.py` | Bollinger Bands |
-| `SQUEEZE_PCTILE` | 20.0 | `pre_breakout.py` | Bottom 20% of trailing BB widths |
-| Cloud Run `task-timeout` | 900s (15 min) | gcloud config | Buffer for full pipeline + cache cold-start |
-| Cloud Run `memory` | 2Gi | gcloud config | pandas + RS calcs comfortably fit |
+| `BB_PCTILE_HIST` | 126 | `pre_breakout.py` | Trailing distribution window for BB squeeze |
+| `SQUEEZE_PCTILE`, `SQUEEZE_PCTILE_WATCH` | 20.0, 40.0 | `pre_breakout.py` | Trigger/watch BB-width percentile |
+
+### EOD downloader / Crypto
+
+| Setting | Value | Where | Why |
+|---|---|---|---|
+| `API_CALL_DELAY_SECONDS` | 1.1 | `eod_batch_downloader.py` | Stays under 60 req/min (community tier) |
+| `API_SOURCES` | `["KBS", "VCI", "MSN", "FMP"]` | `eod_batch_downloader.py` | vnstock 3.5+ supported sources |
+| `BENCHMARK_TICKER` (crypto) | `BTC-USD` | `rs_matrix_crypto.py` | Excluded from rated cohort |
+| `YF_RATE_LIMIT_DELAY` | 0.6s | `rs_matrix_crypto.py` | Per-coin yfinance pacing |
+| `_drop_in_progress_utc_bar` | active | `rs_matrix_crypto.py` | Drops today's UTC partial bar so latest = closed candle |
+
+### Cloud Run
+
+| Setting | Value | Why |
+|---|---|---|
+| `market-breadth-job` task-timeout | 15 min | Buffer for full pipeline + cache cold-start |
+| `market-breadth-job` memory | 2Gi | pandas + RS calcs comfortably fit |
+| `intraday-breadth-job` task-timeout | 120s | Single-batch price fetch + breadth compute < 30s; buffer is generous |
+| `intraday-breadth-job` memory | 512Mi | Smaller workload — only top-100 + EOD CSV |
 
 ---
 
-## 8. Recent changelog (Apr 2026)
+## 8. Recent changelog
+
+### May 2026
+
+| Date | Change | Commit |
+|---|---|---|
+| 2026-05-07 | Intraday chart: render only the latest intraday tick (chart = 49 EOD + 1 live point) | `b29ab56` |
+| 2026-05-06 | Breadth universe = `tickers.csv` top-100 (both intraday + EOD); fix EOD chart that was leaking 230 tickers | `1e5f49b` |
+| 2026-05-06 | Intraday chart: 50-day EOD history + today's intraday ticks; force xaxis to category mode | `7d25194`, `3b88b95` |
+| 2026-05-06 | Intraday chart: align JS line colors with MA_COLORS (mbz20 purple, mbz50 black bold) | `c69bebe`, `c6d3c33` |
+| 2026-05-06 | Intraday breadth: SMA from EOD closes only (no self-reference) + add T-1 EOD anchor | `d745c06`, `f50fb5e` |
+| 2026-05-06 | Add 15-min intraday breadth chart polling JSON on GCS; new Cloud Run job + Scheduler | `f7e6896` |
+| 2026-05-06 | Crypto RS heatmap (top-50 vs BTC); drop in-progress UTC bar; surface update time + UTC close in ICT | `73f9f91`, `14b2dc3`, `8535c30` |
+| 2026-05-06 | Suppress Universe Drift Alert banner (false positives from 58 manual additions to rs_fixed_tickers) | `dc5064a` |
+| 2026-05-06 | Unify RS universe to `rs_fixed_tickers.csv` (172→230); pre-breakout gates on composite RS rating | `bd5363e` |
+| 2026-05-06 | RS matrix composite blend tuned 50/50 → 30% RS + 70% momentum | `bd5363e` |
+
+### April 2026
 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-04-29 | EOD downloader: drop dead SSI source (vnstock 3.5+ no longer supports it) | `8fbed93` |
-| 2026-04-29 | Full pipeline deployed to Cloud Run; Dockerfile copies all 9 pipeline files; entrypoint runs `run_daily_update.py` | `16ede1c` |
+| 2026-04-29 | Full pipeline deployed to Cloud Run; Dockerfile copies pipeline files; entrypoint runs `run_daily_update.py` | `16ede1c` |
 | 2026-04-29 | `VNSTOCK_API_KEY` mounted via Secret Manager (lifts cloud rate limit from 20 → 60 req/min) | infra-only |
-| 2026-04-29 | Cloud Scheduler corrected from `0 8 * * 1-5 (ICT)` (08:00 ICT, broken by freshness gate) → `30 15 * * 1-5 (ICT)` | infra-only |
-| 2026-04-29 | Pre-breakout panel: Layer A (RS Line divergence) + Layer B (Mansfield RS_Ratio + BB squeeze) over RS universe | `16ede1c` |
-| 2026-04-29 | VIX chart extended 50 → 100 sessions | `16ede1c` |
-| 2026-04-29 | Nasdaq Composite 100-session chart added below VIX | `16ede1c` |
-| Earlier | Switch from TCBS/VCI to KBS as primary vnstock source | `91ec0e9` |
-| Earlier | Move from gsutil → Python GCS upload in entrypoint | `66188ba` |
+| 2026-04-29 | Cloud Scheduler corrected `0 8 * * 1-5` → `30 15 * * 1-5` ICT (post-15:00 close) | infra-only |
+| 2026-04-29 | Pre-breakout panel (initial: Mansfield RS_Ratio + BB squeeze) | `16ede1c` |
+| 2026-04-29 | VIX 50→100 sessions; Nasdaq 100-session chart added | `16ede1c` |
 
 ---
 
 ## 9. Known gaps and risks
 
-1. **Pre-breakout coverage gap (94 / 200 RS-universe tickers).** The EOD downloader fetches the top-100 universe (`tickers.csv`), but the RS monitor list is 200 tickers. Layer A/B currently analyse only the 94 that overlap. To close this gap: extend `eod_batch_downloader.py` to also fetch the 106 RS-only tickers (or add a second pass that pulls just those into `data/<today>/combined_dataset.csv`).
+1. **Cloud Run timeout edge.** Full daily pipeline now ~10–13 min on warm cache (was 5–8 min before crypto stage was added). Cold cache could push toward the 15-min limit. If we ever see timeouts, bump `--task-timeout=20m` on `market-breadth-job`.
 
-2. **Cloud Run timeout edge.** The full pipeline is ~5–8 min on a warm cache, but a cold cache (no `gs://…/cache/rs_history/`) can push universe generation to 10+ min. Combined with downloader + matrix + breadth, total can creep toward the 15-min limit. If this becomes routine: bump `--task-timeout=20m` or split universe gen into a weekly job that doesn't run daily.
+2. **vnstock vendor risk.** Daily run hard-depends on KBS for VN EOD + VCI for intraday `Trading.price_board()`. If either source goes dark the downloader falls back through `["KBS", "VCI", "MSN", "FMP"]` — but the intraday job is hard-coded to VCI for `Trading.price_board()` (line in `intraday_breadth.py:fetch_current_prices`). Tested: VCI returns 100/100 in ~2s consistently.
 
-3. **vnstock vendor risk.** Daily run hard-depends on KBS via vnstock. If KBS goes dark, the downloader falls back through `["VCI", "MSN", "FMP"]` — but those need to be tested. There's no synthetic-data fallback for shipping a clearly-marked stale dashboard.
+3. **yfinance crypto coverage.** 10 of the 50 pinned coins fail to fetch (renamed/missing on Yahoo's feed). See [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md) for the list and rename suggestions. Crypto matrix builds fine over the remaining ~39.
 
-4. **No alerting.** A failed Cloud Run execution does not page anyone. The user notices when they visit the URL and see a stale `Last-Modified`. Hooking up Cloud Run Job execution-failed → Slack / email is a 30-min add via Cloud Monitoring alert policy.
+4. **No alerting on failed runs.** A failed Cloud Run execution does not page anyone. User notices via stale `Last-Modified`. Hooking up Cloud Run Job execution-failed → Slack / email is a 30-min add via Cloud Monitoring alert policy.
 
-5. **GitHub Actions reports false failures** on `gcloud builds submit` when log streaming hiccups. Always verify with `gcloud builds list` directly before debugging.
+5. **GitHub Actions occasionally fails to fire** after a push. Workaround: `gcloud builds submit` directly. Observed once in May 2026 — has since fired reliably.
 
-6. **`market_breadth.html` has Windows / mojibake risk** in some hardcoded labels (was `phiÃªn` instead of `phiên`). Fixed in current code; watch for regressions when adding new strings.
+6. **`rs_universe.csv` is orphaned post-unification.** No code references it; it's just rotting in the repo. Safe to `git rm` in a follow-up.
 
-7. **Universe drift unmonitored.** `rs_universe_generator.py` writes drift logs but no alert if the institutional universe changes meaningfully week-over-week. A drift > 3 tickers shows a banner on the dashboard via `SIGNIFICANT_DRIFT_THRESHOLD`, but nothing pages out.
+7. **Universe Drift banner suppressed by design.** The 58 manual additions to `rs_fixed_tickers.csv` would otherwise trigger 58 false-positive "removals" daily. The drift script still runs and writes `logs/universe_drift_*.txt` for audit. To re-enable real drift detection, see [`docs/UNIVERSES.md`](docs/UNIVERSES.md) — needs a `lock_rule`-aware filter in `rs_universe_generator.py`.
+
+8. **Manual HTML uploads can clobber the cloud-published HTML.** When uploading `market_breadth.html` locally, always pull `gs://vn-market-breadth/intraday/combined_dataset.csv` first to avoid publishing stale data over a fresher cloud-generated HTML. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ---
 
@@ -286,25 +369,31 @@ python run_daily_update.py
 
 Ranked roughly by ROI for trading decisions.
 
-1. **Backfill the 106 missing RS tickers** in the EOD downloader so Layer A/B cover the full 200-ticker monitor universe (the panel becomes 2× as useful).
-2. **Email/Slack alert on Cloud Run failure** so a missed daily refresh is detected within minutes rather than at the next dashboard visit.
-3. **Add intraday refresh** (e.g. 13:00 ICT mid-day snapshot) — would require a second Cloud Scheduler job and either a separate Cloud Run Job or a flag-aware single job.
-4. **Move from `:latest` to immutable image tags** (`:<git_sha>`) so rollback is `gcloud run jobs update --image=...:<old_sha>` rather than guessing which image was good.
+1. **Email/Slack alert on Cloud Run failure** so a missed daily refresh is detected within minutes rather than at the next dashboard visit. Cloud Monitoring alert policy on `cloud_run_job` execution status.
+2. **Move from `:latest` to immutable image tags** (`:<git_sha>`) so rollback is `gcloud run jobs update --image=...:<old_sha>` rather than guessing which image was good.
+3. **Drift detector smart-filter**: skip rows in `rs_fixed_tickers.csv` where `lock_rule` starts with `"Manual addition"` so the drift report becomes useful again (currently suppressed at the dashboard layer because of 58 false positives).
+4. **Update crypto universe** to cover the 10 yfinance-failed coins (rename `MATIC` → `POL`, `FTM` → `S`, `RNDR` → `RENDER`; drop or replace the rest).
 5. **Add a sector heatmap** above RS heatmap — same data, aggregated by industry (already in `rs_matrix_3T.csv`).
 6. **Add CBOE PCC ratio + US Treasuries 10y** below VIX/Nasdaq for the macro-flow view.
-7. **Adaptive Bollinger period / RS lookback per-ticker** based on each name's typical vol / consolidation length — improves Layer B precision on volatile small-caps.
+7. **Adaptive Bollinger period / RS lookback per-ticker** based on each name's typical vol — improves Layer B precision on volatile small-caps.
 8. **Backtester harness** that replays a year of pre-breakout signals against forward returns — gives the user a concrete edge estimate.
-9. **Migrate `.env` API-key handling to a single source-of-truth** (currently both `.env` and `~/.vnstock/api_key.json` exist locally) to reduce config drift.
-10. **Multi-region GCS for resilience** if the user starts depending on this for live decisions.
+9. **Delete `rs_universe.csv`** — orphaned post-unification.
+10. **Migrate `.env` API-key handling to a single source-of-truth** (both `.env` and `~/.vnstock/api_key.json` exist locally).
 
 ---
 
 ## 11. How a future Claude session should bootstrap
 
 1. **Read this file first.** Skim §1–4 for posture, §5 for cloud handles, §6 for verbs.
-2. **Then read** `market_breadth.py` (the orchestrator + HTML template) and `pre_breakout.py` (the signal engine). These two files contain ~80% of the product logic.
-3. **Check current state** with `git log -10`, `gcloud run jobs executions list --job=market-breadth-job --region=asia-southeast1 --limit=5`, and a `curl -sI` against the public URL.
-4. **For any change that touches the cloud**: change locally → commit → push → wait 2-3 min for Docker rebuild → next scheduled run picks it up. No manual gcloud deploy needed unless changing job config (timeout/memory/secrets/image-pin).
+2. **Then read the topic docs** under [`docs/`](docs/) for whatever you're touching:
+   - Editing the intraday chart → [`INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md).
+   - Touching pre-breakout / RS rating → [`RS_AND_PREBREAKOUT.md`](docs/RS_AND_PREBREAKOUT.md).
+   - Touching the crypto heatmap → [`CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md).
+   - Anything universe-related → [`UNIVERSES.md`](docs/UNIVERSES.md).
+   - Manual ops / debugging → [`OPERATIONS.md`](docs/OPERATIONS.md).
+3. **Then read** `market_breadth.py` (the orchestrator + HTML template) and `intraday_breadth.py` / `pre_breakout.py`. These three files contain ~80% of the product logic.
+4. **Check current state** with `git log -10`, `gcloud run jobs executions list --job=market-breadth-job --region=asia-southeast1 --limit=5`, and `curl -sI` against the public URL.
+5. **For any change that touches the cloud**: edit locally → commit → push → wait ~2 min for Cloud Build → next scheduled run picks it up. Both Cloud Run jobs share the image; GHA refreshes both jobs' `:latest` digest after every build.
 
 ---
 
