@@ -6,12 +6,12 @@ Common operational situations and how to handle them. All times in **Asia/Ho_Chi
 
 | Schedule | Cron (ICT) | Triggers | Avg duration | Purpose |
 |---|---|---|---|---|
-| `market-breadth-schedule` | `30 15 * * 1-5` | `market-breadth-job` | ~13–15 min | Daily after-3pm pipeline: download fresh EOD, build matrices, regenerate HTML, upload to GCS, persist `combined_dataset.csv` for intraday job |
+| `market-breadth-schedule` | `15 15 * * 1-5` | `market-breadth-job` | ~13–15 min (finishes ~15:28) | Daily after-3pm pipeline: download fresh EOD, build matrices, regenerate HTML, upload to GCS, persist `combined_dataset.csv` + `rs_matrix_3T.csv` + `rs_matrix_crypto.csv` to `gs://vn-market-breadth/intraday/` |
 | `intraday-breadth-schedule` | `*/15 9-14 * * 1-5` | `intraday-breadth-job` | ~10–30s | Every 15 min during VN trading hours; the script's own check no-ops outside 09:30–11:30 / 13:00–14:45 |
 
 ## Verbs you'll actually use
 
-### Trigger the daily pipeline manually (after 15:30 ICT only — freshness gate aborts before)
+### Trigger the daily pipeline manually (after 15:00 ICT — freshness gate aborts before)
 
 ```bash
 gcloud run jobs execute market-breadth-job \
@@ -53,10 +53,12 @@ Replace `market-breadth-job` with `intraday-breadth-job` for intraday.
 When the cloud's HTML is stale or wrong and you want it fixed before tomorrow's 15:30 ICT pipeline:
 
 ```bash
-# 1. Pull the freshest combined_dataset.csv that the cloud persisted.
+# 1. Pull all three freshest CSVs that the cloud persisted (combined + matrices).
 mkdir -p data/$(date +%Y-%m-%d)
 gsutil cp gs://vn-market-breadth/intraday/combined_dataset.csv \
   data/$(date +%Y-%m-%d)/combined_dataset.csv
+gsutil cp gs://vn-market-breadth/intraday/rs_matrix_3T.csv .
+gsutil cp gs://vn-market-breadth/intraday/rs_matrix_crypto.csv .
 
 # 2. Regenerate locally (uses your working tree's market_breadth.py).
 .venv/Scripts/python.exe market_breadth.py --no-browser
@@ -69,7 +71,7 @@ gsutil -h "Cache-Control:no-cache, no-store, must-revalidate" \
 curl -s -I https://storage.googleapis.com/vn-market-breadth/index.html | grep -i last-modified
 ```
 
-⚠️ **Don't skip step 1.** If you regenerate from a stale local `data/<date>/combined_dataset.csv`, you'll publish an HTML that's older than what the cloud already produced. The cloud's `combined_dataset.csv` on GCS is the source of truth for "today's after-3pm data."
+⚠️ **Don't skip step 1.** If you regenerate from stale local CSVs, you'll publish an HTML that's older than what the cloud already produced. The cloud's three CSVs at `gs://vn-market-breadth/intraday/` are the source of truth — combined_dataset (EOD prices), rs_matrix_3T (VN RS Rating), rs_matrix_crypto (crypto RS Rating). All three are persisted at the end of every daily pipeline run.
 
 ### Re-pin a Cloud Run job to the freshest `:latest` digest
 

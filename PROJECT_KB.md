@@ -19,14 +19,14 @@
 |---|---|
 | One-liner | Daily VN-equity dashboard + intraday breadth + US macro (VIX, Nasdaq) + pre-breakout scanner + crypto RS heatmap. |
 | Live URL | https://storage.googleapis.com/vn-market-breadth/index.html |
-| Daily refresh | Weekdays 15:30 ICT (after VN market close at 14:45) — full pipeline rebuild |
+| Daily refresh | Weekdays 15:15 ICT (after VN market close at 14:45) — full pipeline rebuild, finishes ~15:28 |
 | Intraday refresh | Weekdays every 15 min during 09:30–11:30 / 13:00–14:45 ICT — breadth panel only |
 | Repo | https://github.com/vtnhan-bot/vn-market-breadth (master) |
 | Local working dir | `D:\Claude\Market on website` (Windows) |
 | GCP project | `project-feb6df0e-9749-4925-b4e` (region `asia-southeast1`) |
 | GCS bucket | `vn-market-breadth` |
 | Cloud Run jobs | `market-breadth-job` (daily), `intraday-breadth-job` (every 15 min during VN trading hours) |
-| Cloud Scheduler | `market-breadth-schedule` `30 15 * * 1-5` ICT; `intraday-breadth-schedule` `*/15 9-14 * * 1-5` ICT |
+| Cloud Scheduler | `market-breadth-schedule` `15 15 * * 1-5` ICT; `intraday-breadth-schedule` `*/15 9-14 * * 1-5` ICT |
 | Primary user | CTO / portfolio manager — visits the URL daily, makes trade decisions from it |
 
 ---
@@ -146,7 +146,7 @@ Both jobs are pinned to the `:latest` tag. The GHA workflow's two `gcloud run jo
 
 ```
 market-breadth-schedule       (daily)
-  Cron:          30 15 * * 1-5     (15:30 ICT, weekdays)
+  Cron:          15 15 * * 1-5     (15:15 ICT, weekdays)
   Timezone:      Asia/Ho_Chi_Minh
   Target:        POST  …/jobs/market-breadth-job:run
   Auth:          OAuth (github-deploy@…)
@@ -179,7 +179,9 @@ gs://vn-market-breadth/
 ├── index.html                       ← public dashboard (no-cache headers)
 ├── intraday_breadth.json            ← live JSON the dashboard polls (no-cache headers)
 ├── intraday/
-│   └── combined_dataset.csv         ← daily-pipeline-persisted EOD CSV; intraday job reads this
+│   ├── combined_dataset.csv         ← daily-pipeline-persisted EOD CSV; intraday job reads this
+│   ├── rs_matrix_3T.csv             ← daily-pipeline-persisted RS matrix; for local re-renders
+│   └── rs_matrix_crypto.csv         ← daily-pipeline-persisted crypto RS matrix; for local re-renders
 └── cache/                           ← incremental-fetch cache, restored at job start, persisted at job end
     ├── *.pkl                        ← per-ticker breadth pickles
     ├── rs_history/*.csv             ← per-ticker history for VN RS matrix (~234 tickers)
@@ -278,7 +280,7 @@ python run_daily_update.py
 | `TOP_N` (intraday breadth universe) | 100 | `intraday_breadth.py` | Top-100 from `tickers.csv` — same as EOD chart |
 | `MIN_OBS` | 10 | `intraday_breadth.py` | Tickers with <10 daily obs excluded (matches EOD `calculate_breadth`) |
 | Trading-window | 09:30–11:30 / 13:00–14:45 ICT | `intraday_breadth.py` | VN session hours minus ATO/ATC/lunch |
-| `freshness_cutoff` | 15:30 ICT | `market_breadth.py` | Aborts daily run if `combined_dataset.csv` older than this |
+| `freshness_cutoff` | 15:00 ICT | `market_breadth.py` | Aborts daily run if `combined_dataset.csv` older than this; matches 15:15 schedule |
 
 ### RS / Pre-breakout (~230-ticker unified universe)
 
@@ -321,6 +323,7 @@ python run_daily_update.py
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-05-07 | Daily pipeline schedule moved 15:30 → 15:15 ICT; freshness cutoff 15:30 → 15:00; persist RS matrices to GCS so manual re-renders use today's matrices | `cca1411` |
 | 2026-05-07 | Intraday chart: render only the latest intraday tick (chart = 49 EOD + 1 live point) | `b29ab56` |
 | 2026-05-06 | Breadth universe = `tickers.csv` top-100 (both intraday + EOD); fix EOD chart that was leaking 230 tickers | `1e5f49b` |
 | 2026-05-06 | Intraday chart: 50-day EOD history + today's intraday ticks; force xaxis to category mode | `7d25194`, `3b88b95` |
