@@ -46,22 +46,42 @@ blob.upload_from_filename("market_breadth.html", content_type="text/html")
 print("Chart uploaded: https://storage.googleapis.com/vn-market-breadth/index.html")
 PYEOF
 
-# 4b) Persist today's combined_dataset.csv to GCS so the intraday-breadth job
-#     can read SMA history without re-fetching the full top-100 each tick.
-echo "Persisting combined_dataset.csv for intraday job..."
+# 4b) Persist today's combined_dataset.csv + the two RS matrices to GCS so
+#     local re-renders + the intraday-breadth job have today's fresh data.
+#     Without this, manual `python market_breadth.py && gsutil cp index.html`
+#     publishes a dashboard with stale RS heatmaps even though combined_dataset
+#     is fresh.
+echo "Persisting combined_dataset.csv + RS matrices to GCS..."
 python3 - <<'PYEOF'
 import glob, os
 from google.cloud import storage
+client = storage.Client()
+bucket = client.bucket("vn-market-breadth")
+
+# combined_dataset.csv → intraday/ (consumed by intraday-breadth job)
 candidates = sorted(glob.glob("data/*/combined_dataset.csv"))
-if not candidates:
-    print("No combined_dataset.csv found — skipping intraday seeding")
-else:
+if candidates:
     latest = candidates[-1]
-    client = storage.Client()
-    blob = client.bucket("vn-market-breadth").blob("intraday/combined_dataset.csv")
+    blob = bucket.blob("intraday/combined_dataset.csv")
     blob.cache_control = "no-cache, no-store, must-revalidate"
     blob.upload_from_filename(latest, content_type="text/csv")
-    print(f"Seeded gs://vn-market-breadth/intraday/combined_dataset.csv from {latest} ({os.path.getsize(latest):,} bytes)")
+    print(f"Persisted intraday/combined_dataset.csv from {latest} ({os.path.getsize(latest):,} bytes)")
+else:
+    print("No combined_dataset.csv found — skipping")
+
+# RS matrices → intraday/ (consumed by manual local re-renders;
+# the matrices are NOT part of cache/, only the per-ticker history is)
+for src, dst in [
+    ("rs_matrix_3T.csv",     "intraday/rs_matrix_3T.csv"),
+    ("rs_matrix_crypto.csv", "intraday/rs_matrix_crypto.csv"),
+]:
+    if os.path.exists(src):
+        blob = bucket.blob(dst)
+        blob.cache_control = "no-cache, no-store, must-revalidate"
+        blob.upload_from_filename(src, content_type="text/csv")
+        print(f"Persisted {dst} from {src} ({os.path.getsize(src):,} bytes)")
+    else:
+        print(f"Skipped {src} — not found in container")
 PYEOF
 
 # 5) Persist cache/ back to GCS (recursive — keeps daily incremental fetches fast)

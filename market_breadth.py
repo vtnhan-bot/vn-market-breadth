@@ -94,7 +94,9 @@ def verify_fresh_eod_dataset():
 
     modified_at = datetime.fromtimestamp(combined_path.stat().st_mtime, ICT)
     now_ict = datetime.now(ICT)
-    freshness_cutoff = now_ict.replace(hour=15, minute=30, second=0, microsecond=0)
+    # Daily pipeline scheduled at 15:15 ICT; data must be fresher than 15:00.
+    # VN market closes 14:45; vnstock daily bar settles by ~15:00.
+    freshness_cutoff = now_ict.replace(hour=15, minute=0, second=0, microsecond=0)
 
     if modified_at.date() != now_ict.date() or modified_at < freshness_cutoff:
         raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
