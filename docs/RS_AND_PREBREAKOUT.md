@@ -2,6 +2,16 @@
 
 The dashboard's RS Heatmap and Pre-breakout panel both rely on a single composite metric: **`rs_rating`** (1–99 scale), built daily by `rs_matrix_3T.py`. This doc covers the formula and how the pre-breakout layers consume it.
 
+## Data flow (May 2026 — post cache-removal refactor)
+
+`rs_matrix_3T.py` reads each ticker's daily history **directly from `data/<today>/combined_dataset.csv`** — the file `eod_batch_downloader.py` just wrote with vnstock's freshly back-adjusted full series (~420 calendar-day window, all 230+ tickers). There is no per-ticker history cache. This means:
+
+- Corporate-action back-adjustments by vnstock propagate end-to-end automatically (downloader → combined_dataset → matrix).
+- RS 3T stage runtime: ~13 seconds (was ~6 minutes when it did 230 incremental vnstock fetches).
+- `cache/rs_history/` exists on GCS only as orphaned legacy files — no code consumes them.
+
+If you're debugging an unexpected RS rating: pull `gs://vn-market-breadth/intraday/combined_dataset.csv`, slice to the ticker, check the close history. Whatever's there is what the matrix saw.
+
 ## The composite RS Rating formula
 
 For each (ticker, session_date) cell in `rs_matrix_3T.csv`:

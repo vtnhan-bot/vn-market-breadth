@@ -149,5 +149,5 @@ gcloud secrets versions disable <old_version> --secret=vnstock-api-key
 ## ⚠️ Don't run
 
 - **`python rs_universe_generator.py --sync-universe`** — would wipe the 58 manual additions in `rs_fixed_tickers.csv`. See [UNIVERSES.md](UNIVERSES.md).
-- **`gsutil rm gs://vn-market-breadth/intraday/combined_dataset.csv`** — would brick the intraday job until tonight's 15:30 ICT pipeline rewrites it.
+- **`gsutil rm gs://vn-market-breadth/intraday/combined_dataset.csv`** — would brick the intraday job AND `rs_matrix_3T.py` (which reads OHLC directly from this file post-`4a6b13a`) until the next 15:15 ICT pipeline rewrites it.
 - **`git push --force` on master** — would rewrite published commits other clients (Cloud Build, GHA) reference.

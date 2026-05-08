@@ -102,7 +102,7 @@ Five sequential stages. Each is a standalone script that can be run individually
 |---|---|---|---|---|
 | 1 | `eod_batch_downloader.py` | Fetches today's EOD bar for the unified universe (`rs_fixed_tickers.csv` ≈ 230 tickers) via vnstock with rate-limit pacing. | `rs_fixed_tickers.csv`, `cache/*.pkl` | `data/<today>/*.csv`, `data/<today>/combined_dataset.csv` |
 | 2 | `rs_universe_generator.py` | Drift detector — diffs `institutional_universe_3T.csv` (172) vs `rs_fixed_tickers.csv` (230). Reports only; never modifies the locked universe (would wipe the 58 manual additions). | `institutional_universe_3T.csv`, `rs_fixed_tickers.csv` | `logs/universe_drift_*.txt` |
-| 3 | `rs_matrix_3T.py` | Composite RS Rating (1–99): 30% relative-performance percentile + 70% weighted-momentum percentile, last 20 sessions × ~230 tickers. | `rs_fixed_tickers.csv`, `cache/rs_history/*.csv` | `rs_matrix_3T.csv` |
+| 3 | `rs_matrix_3T.py` | Composite RS Rating (1–99): 30% relative-performance percentile + 70% weighted-momentum percentile, last 20 sessions × ~230 tickers. **Reads OHLC directly from `data/<today>/combined_dataset.csv`** (no per-ticker cache; corporate-action back-adjustments propagate automatically). | `rs_fixed_tickers.csv`, `data/<today>/combined_dataset.csv` | `rs_matrix_3T.csv` |
 | 4 | `rs_matrix_crypto.py` *(new May 2026)* | Same composite formula, but for top-50 cryptos vs BTC. Drops in-progress UTC daily bar so rightmost is always the candle that closed at 07:00 ICT. | `crypto_universe.csv`, `cache/rs_history_crypto/*.csv` | `rs_matrix_crypto.csv` |
 | 5 | `market_breadth.py` | Builds HTML: EOD breadth chart (top-100 only), VNINDEX/VIX/Nasdaq candlesticks, breadth detail tables, RS heatmap (VN), RS heatmap (Crypto), pre-breakout panel via `_patch_pre_breakout`, intraday-chart container + JS poller. | `data/<today>/combined_dataset.csv`, `rs_matrix_3T.csv`, `rs_matrix_crypto.csv`, `rs_fixed_tickers.csv`, `tickers.csv` | `market_breadth.html` |
 
@@ -323,6 +323,8 @@ python run_daily_update.py
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-05-08 | RS matrix: read history directly from `combined_dataset.csv` (eliminate `cache/rs_history/`). Corporate-action back-adjustments by vnstock now propagate automatically. RS 3T stage runtime: 6 min → 13 sec. | `4a6b13a` |
+| 2026-05-08 | RS matrix: cache-validation guard against back-adjustment drift (intermediate fix; superseded by `4a6b13a`). Caught GEX (drift 45%) and GEE (75%) on first run. | `ed95c58` |
 | 2026-05-07 | Daily pipeline schedule moved 15:30 → 15:15 ICT; freshness cutoff 15:30 → 15:00; persist RS matrices to GCS so manual re-renders use today's matrices | `cca1411` |
 | 2026-05-07 | Intraday chart: render only the latest intraday tick (chart = 49 EOD + 1 live point) | `b29ab56` |
 | 2026-05-06 | Breadth universe = `tickers.csv` top-100 (both intraday + EOD); fix EOD chart that was leaking 230 tickers | `1e5f49b` |
