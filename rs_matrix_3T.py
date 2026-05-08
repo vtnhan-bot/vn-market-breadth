@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Build a 10-session Relative Strength matrix for the Institutional 3T universe."""
+"""Build the 20-session RS matrix for the Institutional 3T universe.
+
+Reads OHLC history directly from `data/<today>/combined_dataset.csv` (written
+by `eod_batch_downloader.py`). No per-ticker `cache/rs_history/` files —
+combined_dataset.csv is the single source of truth, which means corporate-
+action back-adjustments by vnstock automatically propagate (the downloader
+re-fetches the full series each day, ~420 calendar-day window).
+"""
 
 from __future__ import annotations
 
@@ -12,116 +19,16 @@ import pandas as pd
 from rs_source2 import (
     INDEX_TICKER,
     RS_FIXED_TICKERS_PATH,
-    RS_HISTORY_CACHE_DIR,
     RS_LOOKBACK_CALENDAR_DAYS,
     RS_OUTPUT_SESSIONS,
-    append_latest_candle_to_cache,
-    archive_rs_cache_file,
     configure_logging,
-    fetch_history,
-    fetch_history_direct,
-    load_cached_history,
 )
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 RS_MATRIX_3T_PATH = SCRIPT_DIR / "rs_matrix_3T.csv"
-INITIAL_FETCH_BUFFER_DAYS = RS_LOOKBACK_CALENDAR_DAYS + 60
-CACHE_DRIFT_THRESHOLD = 0.03   # >3% diff vs combined_dataset.csv = back-adjustment, flush cache
-CACHE_VALIDATION_OVERLAP_DAYS = 5  # check this many recent overlapping dates
 
 LOGGER = configure_logging("rs_matrix_3t")
-
-
-def validate_rs_history_against_combined(universe_tickers: list[str]) -> list[str]:
-    """Detect rs_history caches stale due to vnstock back-adjustments and flush them.
-
-    Why: when a corporate action (split / bonus issue / dividend) happens, vnstock
-    retroactively adjusts historical prices. eod_batch_downloader.py writes today's
-    combined_dataset.csv with the adjusted full series, but cache/rs_history/<ticker>.csv
-    still holds pre-adjustment prices from earlier daily runs. The mismatch makes
-    rs_matrix_3T.py compute today's `stock_return_90d` against an old-scale 90-day-ago
-    price → fake -25% return → rs_rating crashes from 80+ to single digits in one day.
-    Reproduced live for GEX on 2026-05-05.
-
-    This function compares each ticker's last 5 overlapping cached closes against
-    today's freshly-downloaded combined_dataset.csv. Where the cached close differs
-    by >3% from the fresh close on the same date (sign of a back-adjustment), it
-    archives the cache file. The next incremental_sync_history() call will see an
-    empty cache and do an initial_fetch — returning properly back-adjusted history.
-
-    Returns the list of tickers whose caches were flushed (for logging).
-    """
-    candidates = sorted((SCRIPT_DIR / "data").glob("*/combined_dataset.csv"))
-    if not candidates:
-        LOGGER.warning("Cache validation skipped — no combined_dataset.csv found under data/")
-        return []
-    combined_path = candidates[-1]
-    LOGGER.info("Validating rs_history caches against %s ...", combined_path.relative_to(SCRIPT_DIR))
-
-    combined = pd.read_csv(combined_path, encoding="utf-8-sig")
-    combined["time"] = pd.to_datetime(combined["time"], errors="coerce").dt.date
-    combined["ticker"] = combined["ticker"].astype(str).str.upper().str.strip()
-    combined["close"] = pd.to_numeric(combined["close"], errors="coerce")
-    combined = combined.dropna(subset=["time", "ticker", "close"])
-
-    fresh_lookup: dict[str, dict] = {}
-    for tkr, sub in combined.groupby("ticker"):
-        fresh_lookup[tkr] = dict(zip(sub["time"], sub["close"]))
-
-    flushed: list[str] = []
-    for ticker in universe_tickers:
-        tkr = ticker.upper().strip()
-        cache_path = RS_HISTORY_CACHE_DIR / f"{tkr}.csv"
-        if not cache_path.exists():
-            continue
-        try:
-            cache = pd.read_csv(cache_path, encoding="utf-8-sig")
-            cache["time"] = pd.to_datetime(cache["time"], errors="coerce").dt.date
-            cache["close"] = pd.to_numeric(cache["close"], errors="coerce")
-            cache = cache.dropna(subset=["time", "close"])
-        except Exception as exc:
-            LOGGER.warning("%s: cache read failed (%s) — flushing", tkr, exc)
-            archive_rs_cache_file(tkr)
-            flushed.append(tkr)
-            continue
-
-        fresh_for_ticker = fresh_lookup.get(tkr, {})
-        if not fresh_for_ticker:
-            continue
-
-        cache_dates = set(cache["time"].tolist())
-        overlap = sorted(cache_dates & set(fresh_for_ticker.keys()))[-CACHE_VALIDATION_OVERLAP_DAYS:]
-        if not overlap:
-            continue
-
-        for d in overlap:
-            cached_close = float(cache.loc[cache["time"] == d, "close"].iloc[0])
-            fresh_close = float(fresh_for_ticker[d])
-            if fresh_close <= 0:
-                continue
-            drift = abs(cached_close - fresh_close) / fresh_close
-            if drift > CACHE_DRIFT_THRESHOLD:
-                LOGGER.warning(
-                    "%s: cache stale at %s (cache=%.2f vs fresh=%.2f, drift=%.1f%%) "
-                    "— archiving cache; next sync will re-fetch full adjusted history",
-                    tkr, d, cached_close, fresh_close, drift * 100,
-                )
-                archive_rs_cache_file(tkr)
-                flushed.append(tkr)
-                break  # one stale date is enough to flush
-
-    if flushed:
-        LOGGER.info(
-            "Cache validation: flushed %d ticker(s) due to back-adjustment drift: %s",
-            len(flushed), ", ".join(flushed),
-        )
-    else:
-        LOGGER.info(
-            "Cache validation: all %d ticker caches consistent with combined_dataset.csv",
-            len(universe_tickers),
-        )
-    return flushed
 
 
 def load_universe() -> pd.DataFrame:
@@ -163,42 +70,20 @@ def prepare_history_frame(history_df: pd.DataFrame, ticker: str) -> pd.DataFrame
     return prepared
 
 
-def incremental_sync_history(ticker: str, end_date: str) -> tuple[pd.DataFrame, str]:
-    cached_df = load_cached_history(ticker)
-    if cached_df is None or cached_df.empty:
-        start_date = (date.today() - timedelta(days=INITIAL_FETCH_BUFFER_DAYS)).isoformat()
-        history_df = fetch_history(ticker, start_date, end_date, LOGGER)
-        if history_df is None or history_df.empty:
-            raise RuntimeError(f"{ticker}: initial history load failed.")
-        return prepare_history_frame(history_df, ticker), "initial_fetch"
+def load_history_from_combined(combined_df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Slice combined_dataset.csv for one ticker and prepare for RS calc.
 
-    cached_df = prepare_history_frame(cached_df, ticker)
-    last_cached_date = cached_df["time"].max()
-    target_date = pd.to_datetime(end_date).date()
-    if pd.isna(last_cached_date) or last_cached_date >= target_date:
-        return cached_df, "cache_hit"
-
-    latest_slice = fetch_history_direct(
-        ticker,
-        start_date=last_cached_date.isoformat(),
-        end_date=end_date,
-        logger=LOGGER,
-    )
-    if latest_slice is None or latest_slice.empty:
-        LOGGER.warning(
-            "%s: incremental history refresh failed; using cache through %s",
-            ticker,
-            last_cached_date,
-        )
-        return cached_df, "cache_hit"
-
-    latest_slice = prepare_history_frame(latest_slice, ticker)
-    latest_slice = latest_slice[latest_slice["time"] > last_cached_date]
-    if latest_slice.empty:
-        return cached_df, "cache_hit"
-
-    merged_history = append_latest_candle_to_cache(ticker, latest_slice)
-    return prepare_history_frame(merged_history, ticker), "incremental_append"
+    `combined_df` is expected to be already loaded and lightly normalised by
+    the caller (ticker column upper-cased, stripped). Returns a per-ticker
+    history frame with the same shape `prepare_history_frame` produces, so
+    downstream calculate_return_90d / calculate_weighted_momentum_score work
+    unchanged from the previous cache-based flow.
+    """
+    ticker = ticker.upper().strip()
+    sub = combined_df[combined_df["ticker"] == ticker]
+    if sub.empty:
+        raise RuntimeError(f"{ticker}: no rows in combined_dataset.csv")
+    return prepare_history_frame(sub.copy(), ticker)
 
 
 def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
@@ -243,23 +128,22 @@ def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) ->
     return (weighted_ratio - 1.0) * 100.0
 
 
-def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
-    end_date = date.today().isoformat()
-    benchmark_df, benchmark_sync_mode = incremental_sync_history(INDEX_TICKER, end_date)
+def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFrame:
+    LOGGER.info("Loading OHLC from %s ...", combined_path.relative_to(SCRIPT_DIR))
+    combined_df = pd.read_csv(combined_path, encoding="utf-8-sig")
+    combined_df["ticker"] = combined_df["ticker"].astype(str).str.upper().str.strip()
+    LOGGER.info("combined_dataset has %s rows across %s unique tickers",
+                len(combined_df), combined_df["ticker"].nunique())
+
+    benchmark_df = load_history_from_combined(combined_df, INDEX_TICKER)
     benchmark_dates = sorted(benchmark_df["time"].dropna().unique())
     session_dates = benchmark_dates[-RS_OUTPUT_SESSIONS:]
     if len(session_dates) < RS_OUTPUT_SESSIONS:
         raise RuntimeError("VNINDEX history does not contain enough trading sessions.")
 
-    LOGGER.info(
-        "Locked RS universe loaded: %s tickers | cache dir: %s",
-        len(universe_df),
-        RS_HISTORY_CACHE_DIR,
-    )
-    LOGGER.info(
-        "RS benchmark sessions: %s",
-        ", ".join(pd.Series(session_dates).astype(str).tolist()),
-    )
+    LOGGER.info("Locked RS universe loaded: %s tickers", len(universe_df))
+    LOGGER.info("RS benchmark sessions: %s",
+                ", ".join(pd.Series(session_dates).astype(str).tolist()))
 
     benchmark_returns = {
         session_date: calculate_return_90d(benchmark_df, session_date)
@@ -267,23 +151,16 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
     }
 
     all_rows: list[dict] = []
-    sync_counters = {"cache_hit": 0, "incremental_append": 0, "initial_fetch": 0}
     failed_tickers: list[str] = []
 
     total = len(universe_df)
     for position, universe_row in enumerate(universe_df.itertuples(index=False), start=1):
         ticker = universe_row.ticker
-        LOGGER.info(
-            "[Institutional 3T RS] %s/%s | syncing %s",
-            position,
-            total,
-            ticker,
-        )
+        LOGGER.info("[Institutional 3T RS] %s/%s | %s", position, total, ticker)
         try:
-            history_df, sync_mode = incremental_sync_history(ticker, end_date)
-            sync_counters[sync_mode] += 1
+            history_df = load_history_from_combined(combined_df, ticker)
         except Exception as exc:
-            LOGGER.warning("NON-FATAL: %s history sync failed: %s", ticker, exc)
+            LOGGER.warning("NON-FATAL: %s history load failed: %s", ticker, exc)
             failed_tickers.append(ticker)
             continue
 
@@ -364,20 +241,13 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
 
     matrix_df.to_csv(RS_MATRIX_3T_PATH, index=False, encoding="utf-8-sig")
     LOGGER.info(
-        "Saved rs_matrix_3T.csv with %s rows across %s sessions.",
+        "Saved rs_matrix_3T.csv with %s rows across %s sessions",
         len(matrix_df),
         matrix_df["session_date"].nunique(),
     )
-    LOGGER.info(
-        "Incremental Sync summary | cache hits=%s | appended=%s | initial fetches=%s",
-        sync_counters["cache_hit"],
-        sync_counters["incremental_append"],
-        sync_counters["initial_fetch"],
-    )
-    LOGGER.info("Benchmark sync mode: %s", benchmark_sync_mode)
     if failed_tickers:
         LOGGER.warning(
-            "NON-FATAL summary: %s fixed-universe tickers failed: %s",
+            "NON-FATAL summary: %s tickers failed history load: %s",
             len(failed_tickers),
             ", ".join(failed_tickers),
         )
@@ -387,10 +257,14 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     LOGGER.info("Starting Institutional 3T RS matrix build")
     universe_df = load_universe()
-    # Detect and flush rs_history caches that hold stale pre-corporate-action
-    # prices. Runs against today's freshly-downloaded combined_dataset.csv.
-    validate_rs_history_against_combined(universe_df["ticker"].tolist())
-    matrix_df = build_rs_matrix(universe_df)
+    candidates = sorted((SCRIPT_DIR / "data").glob("*/combined_dataset.csv"))
+    if not candidates:
+        raise RuntimeError(
+            "No combined_dataset.csv found under data/<date>/. "
+            "Run eod_batch_downloader.py first."
+        )
+    combined_path = candidates[-1]
+    matrix_df = build_rs_matrix(universe_df, combined_path)
     latest_session = pd.to_datetime(matrix_df["session_date"]).max().date().isoformat()
     leader_slice = matrix_df[matrix_df["session_date"] == pd.to_datetime(latest_session).date()]
     leaders = (
