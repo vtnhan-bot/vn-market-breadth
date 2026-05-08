@@ -16,6 +16,7 @@ from rs_source2 import (
     RS_LOOKBACK_CALENDAR_DAYS,
     RS_OUTPUT_SESSIONS,
     append_latest_candle_to_cache,
+    archive_rs_cache_file,
     configure_logging,
     fetch_history,
     fetch_history_direct,
@@ -26,8 +27,101 @@ from rs_source2 import (
 SCRIPT_DIR = Path(__file__).resolve().parent
 RS_MATRIX_3T_PATH = SCRIPT_DIR / "rs_matrix_3T.csv"
 INITIAL_FETCH_BUFFER_DAYS = RS_LOOKBACK_CALENDAR_DAYS + 60
+CACHE_DRIFT_THRESHOLD = 0.03   # >3% diff vs combined_dataset.csv = back-adjustment, flush cache
+CACHE_VALIDATION_OVERLAP_DAYS = 5  # check this many recent overlapping dates
 
 LOGGER = configure_logging("rs_matrix_3t")
+
+
+def validate_rs_history_against_combined(universe_tickers: list[str]) -> list[str]:
+    """Detect rs_history caches stale due to vnstock back-adjustments and flush them.
+
+    Why: when a corporate action (split / bonus issue / dividend) happens, vnstock
+    retroactively adjusts historical prices. eod_batch_downloader.py writes today's
+    combined_dataset.csv with the adjusted full series, but cache/rs_history/<ticker>.csv
+    still holds pre-adjustment prices from earlier daily runs. The mismatch makes
+    rs_matrix_3T.py compute today's `stock_return_90d` against an old-scale 90-day-ago
+    price → fake -25% return → rs_rating crashes from 80+ to single digits in one day.
+    Reproduced live for GEX on 2026-05-05.
+
+    This function compares each ticker's last 5 overlapping cached closes against
+    today's freshly-downloaded combined_dataset.csv. Where the cached close differs
+    by >3% from the fresh close on the same date (sign of a back-adjustment), it
+    archives the cache file. The next incremental_sync_history() call will see an
+    empty cache and do an initial_fetch — returning properly back-adjusted history.
+
+    Returns the list of tickers whose caches were flushed (for logging).
+    """
+    candidates = sorted((SCRIPT_DIR / "data").glob("*/combined_dataset.csv"))
+    if not candidates:
+        LOGGER.warning("Cache validation skipped — no combined_dataset.csv found under data/")
+        return []
+    combined_path = candidates[-1]
+    LOGGER.info("Validating rs_history caches against %s ...", combined_path.relative_to(SCRIPT_DIR))
+
+    combined = pd.read_csv(combined_path, encoding="utf-8-sig")
+    combined["time"] = pd.to_datetime(combined["time"], errors="coerce").dt.date
+    combined["ticker"] = combined["ticker"].astype(str).str.upper().str.strip()
+    combined["close"] = pd.to_numeric(combined["close"], errors="coerce")
+    combined = combined.dropna(subset=["time", "ticker", "close"])
+
+    fresh_lookup: dict[str, dict] = {}
+    for tkr, sub in combined.groupby("ticker"):
+        fresh_lookup[tkr] = dict(zip(sub["time"], sub["close"]))
+
+    flushed: list[str] = []
+    for ticker in universe_tickers:
+        tkr = ticker.upper().strip()
+        cache_path = RS_HISTORY_CACHE_DIR / f"{tkr}.csv"
+        if not cache_path.exists():
+            continue
+        try:
+            cache = pd.read_csv(cache_path, encoding="utf-8-sig")
+            cache["time"] = pd.to_datetime(cache["time"], errors="coerce").dt.date
+            cache["close"] = pd.to_numeric(cache["close"], errors="coerce")
+            cache = cache.dropna(subset=["time", "close"])
+        except Exception as exc:
+            LOGGER.warning("%s: cache read failed (%s) — flushing", tkr, exc)
+            archive_rs_cache_file(tkr)
+            flushed.append(tkr)
+            continue
+
+        fresh_for_ticker = fresh_lookup.get(tkr, {})
+        if not fresh_for_ticker:
+            continue
+
+        cache_dates = set(cache["time"].tolist())
+        overlap = sorted(cache_dates & set(fresh_for_ticker.keys()))[-CACHE_VALIDATION_OVERLAP_DAYS:]
+        if not overlap:
+            continue
+
+        for d in overlap:
+            cached_close = float(cache.loc[cache["time"] == d, "close"].iloc[0])
+            fresh_close = float(fresh_for_ticker[d])
+            if fresh_close <= 0:
+                continue
+            drift = abs(cached_close - fresh_close) / fresh_close
+            if drift > CACHE_DRIFT_THRESHOLD:
+                LOGGER.warning(
+                    "%s: cache stale at %s (cache=%.2f vs fresh=%.2f, drift=%.1f%%) "
+                    "— archiving cache; next sync will re-fetch full adjusted history",
+                    tkr, d, cached_close, fresh_close, drift * 100,
+                )
+                archive_rs_cache_file(tkr)
+                flushed.append(tkr)
+                break  # one stale date is enough to flush
+
+    if flushed:
+        LOGGER.info(
+            "Cache validation: flushed %d ticker(s) due to back-adjustment drift: %s",
+            len(flushed), ", ".join(flushed),
+        )
+    else:
+        LOGGER.info(
+            "Cache validation: all %d ticker caches consistent with combined_dataset.csv",
+            len(universe_tickers),
+        )
+    return flushed
 
 
 def load_universe() -> pd.DataFrame:
@@ -293,6 +387,9 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     LOGGER.info("Starting Institutional 3T RS matrix build")
     universe_df = load_universe()
+    # Detect and flush rs_history caches that hold stale pre-corporate-action
+    # prices. Runs against today's freshly-downloaded combined_dataset.csv.
+    validate_rs_history_against_combined(universe_df["ticker"].tolist())
     matrix_df = build_rs_matrix(universe_df)
     latest_session = pd.to_datetime(matrix_df["session_date"]).max().date().isoformat()
     leader_slice = matrix_df[matrix_df["session_date"] == pd.to_datetime(latest_session).date()]
