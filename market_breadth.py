@@ -946,6 +946,40 @@ def build_html(
             ndx_chart_data = json.dumps([ndx_candle])
             ndx_vol_data = json.dumps([ndx_bar])
 
+    # Per-chart "latest data" labels (Vietnam time). Each label reports the
+    # most recent session that feeds the panel above it. Empty string when
+    # the panel itself is hidden (no data).
+    def _fmt_latest(ts):
+        return pd.to_datetime(ts).strftime("%d-%m-%Y")
+
+    breadth_latest_label = (
+        f'<div class="data-as-of">Dữ liệu mới nhất: {_fmt_latest(breadth.index[-1])} (EOD)</div>'
+        if len(breadth.index) else ""
+    )
+    vni_latest_label = ""
+    if vnindex_df is not None and not vnindex_df.empty:
+        vni_latest_label = (
+            f'<div class="data-as-of">Dữ liệu mới nhất: '
+            f'{_fmt_latest(pd.to_datetime(vnindex_df["time"]).max())} (EOD)</div>'
+        )
+    vix_latest_label = ""
+    if us_vix_df is not None and not us_vix_df.empty:
+        vix_latest_label = (
+            f'<div class="data-as-of">Dữ liệu mới nhất: '
+            f'{_fmt_latest(pd.to_datetime(us_vix_df["time"]).max())} (US EOD)</div>'
+        )
+    ndx_latest_label = ""
+    if us_nasdaq_df is not None and not us_nasdaq_df.empty:
+        ndx_latest_label = (
+            f'<div class="data-as-of">Dữ liệu mới nhất: '
+            f'{_fmt_latest(pd.to_datetime(us_nasdaq_df["time"]).max())} (US EOD)</div>'
+        )
+    rs_latest_label = ""
+    if rs_payload and rs_payload.get("dates"):
+        rs_latest_label = (
+            f'<div class="rs-update-time">Dữ liệu mới nhất: {rs_payload["dates"][0]} (EOD)</div>'
+        )
+
     # Build analysis table rows HTML
     table_rows = ""
     for r in analysis["rows"]:
@@ -1025,6 +1059,7 @@ def build_html(
       <div class="rs-toolbar-note">RS 90 ngày so với VNINDEX | mới nhất trước | dòng dưới = % giá thay đổi so với phiên trước</div>
     </div>
     <div class="{source_label_class}" title="{source_label_title}">{rs_payload['source_label']}</div>
+    {rs_latest_label}
     <div class="rs-table-wrap">
       <table class="rs-table" id="rs-table">
         <thead>
@@ -1307,6 +1342,12 @@ def build_html(
       margin: -6px 0 12px;
       font-style: italic;
     }}
+    .data-as-of {{
+      font-size: 0.78rem;
+      color: #666;
+      margin: -10px 4px 18px;
+      font-style: italic;
+    }}
     .rs-source-ok {{
       color: #2E7D32;
       background: #E8F5E9;
@@ -1460,6 +1501,7 @@ def build_html(
   {drift_notification_html}
 
   <div id="chart"></div>
+  {breadth_latest_label}
 
   <div class="panel" style="background:#fff;border:1px solid #e0d8cc;">
     <h2>📡 Độ rộng 50 phiên + intraday <span class="tag">Cập nhật mỗi 15 phút</span></h2>
@@ -1473,11 +1515,14 @@ def build_html(
     </div>
   </div>
 
-  <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
+  <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
+  {vni_latest_label}
 
-  <div id="vix-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
+  <div id="vix-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
+  {vix_latest_label}
 
-  <div id="nasdaq-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
+  <div id="nasdaq-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
+  {ndx_latest_label}
 
   <div class="panel">
     <h2>🧮 Nhận định tuần tới <span class="tag">{analysis['last_date']}</span></h2>
@@ -1494,6 +1539,7 @@ def build_html(
   <div class="grid-2">
     <div class="panel">
       <h2>📋 Chi tiết chỉ số</h2>
+      {breadth_latest_label}
       <table>
         <thead>
           <tr>
