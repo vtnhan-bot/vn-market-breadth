@@ -23,8 +23,6 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
 
-from vnindex_ex_vin import compute_vnindex_ex_vin
-
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 EXCEL_PATH = r"C:\Users\DELL\Desktop\vietnam_top100_marketcap_hose_hnx_best_effort.xlsx"
 SCRIPT_DIR = Path(__file__).parent
@@ -821,7 +819,6 @@ def build_html(
     us_vix_df=None,
     us_nasdaq_df=None,
     rs_crypto_payload=None,
-    vnindex_ex_vin_df=None,
 ):
     dates = [d.strftime("%d-%m-%Y") for d in breadth.index]
 
@@ -876,47 +873,6 @@ def build_html(
         }
         vni_chart_data = json.dumps([candle])
         vni_vol_data   = json.dumps([vol_bar])
-
-    # VN-Index ex-Vingroup (VIC, VHM, VRE) chart data
-    vni_ex_vin_chart_data = "null"
-    vni_ex_vin_delta_note = ""
-    if vnindex_ex_vin_df is not None and len(vnindex_ex_vin_df) > 0:
-        ex = vnindex_ex_vin_df.copy()
-        ex["time"] = pd.to_datetime(ex["time"])
-        ex_dates = [d.strftime("%d-%m-%Y") for d in ex["time"]]
-        ex_traces = [
-            {
-                "x": ex_dates,
-                "y": ex["vnindex_close"].astype(float).round(4).tolist(),
-                "name": "VN-Index",
-                "mode": "lines",
-                "line": {"color": "#1f77b4", "width": 2},
-                "hovertemplate": "VN-Index: %{y:.2f}<extra></extra>",
-            },
-            {
-                "x": ex_dates,
-                "y": ex["ex_vin_close"].astype(float).round(4).tolist(),
-                "name": "VN-Index loại VIC/VHM/VRE",
-                "mode": "lines",
-                "line": {"color": "#e67e22", "width": 2},
-                "hovertemplate": "Ex-Vin: %{y:.2f}<extra></extra>",
-            },
-        ]
-        vni_ex_vin_chart_data = json.dumps(ex_traces)
-        vni_ret = float(ex["vnindex_close"].iloc[-1]) / float(ex["vnindex_close"].iloc[0]) - 1.0
-        ex_ret  = float(ex["ex_vin_close"].iloc[-1])  / float(ex["ex_vin_close"].iloc[0])  - 1.0
-        spread_pp = (ex_ret - vni_ret) * 100.0
-        if spread_pp >= 0:
-            sign = "+"
-            verdict = f"VIC/VHM/VRE đang kéo VN-Index XUỐNG {abs(spread_pp):.2f} điểm phần trăm trong 50 phiên."
-        else:
-            sign = "-"
-            verdict = f"VIC/VHM/VRE đang đẩy VN-Index LÊN {abs(spread_pp):.2f} điểm phần trăm trong 50 phiên."
-        vni_ex_vin_delta_note = (
-            f"VN-Index 50 phiên: {vni_ret*100:+.2f}% &nbsp;|&nbsp; "
-            f"Loại Vin trio: {ex_ret*100:+.2f}% &nbsp;|&nbsp; "
-            f"Chênh lệch: {sign}{abs(spread_pp):.2f} pp &nbsp;—&nbsp; {verdict}"
-        )
 
     # CBOE VIX volatility index chart data (100 sessions)
     vix_chart_data = "null"
@@ -1519,9 +1475,6 @@ def build_html(
 
   <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
 
-  <div id="vnindex-ex-vin-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
-  <div style="font-size:0.78rem;color:#666;margin:-6px 4px 24px 4px;font-style:italic">{vni_ex_vin_delta_note}</div>
-
   <div id="vix-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
 
   <div id="nasdaq-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:24px"></div>
@@ -1653,34 +1606,6 @@ if (vniData && vniVol) {{
     height: 624,
   }};
   Plotly.newPlot('vnindex-chart', [...vniData, ...vniVol], vniLayout, config);
-}}
-
-// VN-Index ex-Vingroup (VIC, VHM, VRE) chart
-const vniExVinData = {vni_ex_vin_chart_data};
-if (vniExVinData) {{
-  const vniExVinLayout = {{
-    title: {{ text: 'VN-Index loại VIC/VHM/VRE - 50 phiên', font: {{ color: '#c0392b', size: 18 }} }},
-    paper_bgcolor: '#fff8f0',
-    plot_bgcolor: '#fff8f0',
-    xaxis: {{
-      type: 'category',
-      tickangle: -45,
-      tickfont: {{ size: 10 }},
-      gridcolor: '#ead8c0',
-    }},
-    yaxis: {{
-      title: 'Điểm (re-index từ đầu cửa sổ)',
-      gridcolor: '#ead8c0',
-    }},
-    legend: {{ orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center' }},
-    hovermode: 'x unified',
-    margin: {{ l: 60, r: 60, t: 60, b: 100 }},
-    height: 460,
-  }};
-  Plotly.newPlot('vnindex-ex-vin-chart', vniExVinData, vniExVinLayout, config);
-}} else {{
-  const exChart = document.getElementById('vnindex-ex-vin-chart');
-  if (exChart) {{ exChart.style.display = 'none'; }}
 }}
 
 // VIX chart
@@ -1952,20 +1877,6 @@ def main():
             if aligned_vnindex.empty:
                 log("WARNING: VN-Index data exists in combined_dataset.csv but does not overlap the breadth window.")
 
-        vnindex_ex_vin_df = None
-        if vnindex_df is not None and not vnindex_df.empty:
-            try:
-                vnindex_ex_vin_df = compute_vnindex_ex_vin(
-                    vnindex_df, combined_df, breadth.index[0], SESSIONS_SHOW
-                )
-                if vnindex_ex_vin_df.empty:
-                    log("WARNING: VN-Index ex-Vingroup series came back empty — chart will be hidden.")
-                else:
-                    log(f"VN-Index ex-Vin series built: {len(vnindex_ex_vin_df)} sessions")
-            except Exception as exc:
-                log(f"WARNING: failed to build VN-Index ex-Vin series ({exc}) — chart will be hidden.")
-                vnindex_ex_vin_df = None
-
         rs_payload = load_rs_matrix_payload()
         if rs_payload:
             log(
@@ -2021,7 +1932,6 @@ def main():
             us_vix_df,
             us_nasdaq_df,
             rs_crypto_payload=rs_crypto_payload,
-            vnindex_ex_vin_df=vnindex_ex_vin_df,
         )
         with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
             f.write(html)
