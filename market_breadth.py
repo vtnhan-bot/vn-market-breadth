@@ -88,20 +88,36 @@ def get_today_combined_dataset_path():
     return DATA_DIR / today_str / "combined_dataset.csv"
 
 def verify_fresh_eod_dataset():
-    combined_path = get_today_combined_dataset_path()
-    if not combined_path.exists():
-        raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
-
-    modified_at = datetime.fromtimestamp(combined_path.stat().st_mtime, ICT)
     now_ict = datetime.now(ICT)
-    # Daily pipeline scheduled at 15:15 ICT; data must be fresher than 15:00.
+    today_path = get_today_combined_dataset_path()
+    # Daily pipeline scheduled at 15:15 ICT; today's data settles by ~15:00.
     # VN market closes 14:45; vnstock daily bar settles by ~15:00.
     freshness_cutoff = now_ict.replace(hour=15, minute=0, second=0, microsecond=0)
 
-    if modified_at.date() != now_ict.date() or modified_at < freshness_cutoff:
-        raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
+    # Strict path: post-VN-close. Today's settled dataset must exist and be
+    # newer than 15:00 ICT. This is what the 15:15 ICT scheduled run hits.
+    if now_ict >= freshness_cutoff:
+        if not today_path.exists():
+            raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
+        modified_at = datetime.fromtimestamp(today_path.stat().st_mtime, ICT)
+        if modified_at.date() != now_ict.date() or modified_at < freshness_cutoff:
+            raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
+        return today_path, modified_at
 
-    return combined_path, modified_at
+    # Permissive path: pre-15:00 ICT (06:00 ICT US-close refresh, ad-hoc
+    # triggers). VN hasn't traded yet so no "today" dataset exists. Fall back
+    # to the most recent dated folder under DATA_DIR so US/RS/HTML can still
+    # refresh; the breadth chart simply reflects the latest available close.
+    candidates = sorted(DATA_DIR.glob("*/combined_dataset.csv"), reverse=True)
+    if not candidates:
+        raise RuntimeError("CRITICAL: No combined_dataset.csv found under data/. Aborting HTML Update.")
+    chosen = candidates[0]
+    modified_at = datetime.fromtimestamp(chosen.stat().st_mtime, ICT)
+    log(
+        f"Pre-15:00 ICT run ({now_ict.strftime('%H:%M %Z')}); using most-recent EOD dataset "
+        f"{chosen.parent.name} (modified {modified_at.strftime('%d/%m/%Y %H:%M:%S %Z')})"
+    )
+    return chosen, modified_at
 
 def get_last_three_combined_tickers(combined_path):
     try:
