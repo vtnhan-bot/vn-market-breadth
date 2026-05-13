@@ -620,7 +620,27 @@ def _load_us_index_data(symbol, label, sessions_show, period="1y"):
     for column in ["open", "high", "low", "close", "volume"]:
         df[column] = pd.to_numeric(df[column], errors="coerce")
     df = df.dropna(subset=["time", "open", "high", "low", "close"])
-    return df.sort_values("time").tail(sessions_show).reset_index(drop=True)
+    df = df.sort_values("time").reset_index(drop=True)
+
+    # yfinance returns an in-progress daily bar for the current US trading day
+    # while the US session is still open. close = intraday price, not the real
+    # EOD. Drop it so the chart only ever shows completed daily closes. The
+    # next scheduled run after US close (06:00 ICT) picks up the real bar.
+    if not df.empty:
+        try:
+            from zoneinfo import ZoneInfo
+            now_et = pd.Timestamp.now(tz=ZoneInfo("US/Eastern"))
+            last_bar_date = pd.Timestamp(df["time"].iloc[-1]).date()
+            if last_bar_date == now_et.date() and now_et.hour < 16:
+                log(
+                    f"{label} ({symbol}): dropping in-progress {last_bar_date} bar "
+                    f"(US market still open, ET {now_et.strftime('%H:%M')})"
+                )
+                df = df.iloc[:-1].reset_index(drop=True)
+        except Exception as exc:
+            log(f"WARNING: {label} partial-bar check failed ({exc}); keeping all bars.")
+
+    return df.tail(sessions_show).reset_index(drop=True)
 
 
 def load_us_vix_index_data(sessions_show=US_INDEX_SESSIONS):
