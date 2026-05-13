@@ -643,6 +643,86 @@ def _load_us_index_data(symbol, label, sessions_show, period="1y"):
     return df.tail(sessions_show).reset_index(drop=True)
 
 
+def refresh_intraday_breadth_json(breadth: pd.DataFrame, gcs_bucket: str = "vn-market-breadth") -> None:
+    """Rewrite intraday_breadth.json on GCS to reflect the post-close state.
+
+    Chart contract: 49 EOD bars + 1 'latest tick' = 50 points. After the EOD
+    pipeline finishes, the rightmost tick should be today's close — not the
+    last intraday tick from earlier in the day. We set:
+
+      date         = today (the just-closed trading day)
+      eod_history  = 49 EOD bars ending T-1 (yesterday)
+      updates      = [one synthetic 'Đóng cửa' tick carrying today's EOD values]
+
+    When tomorrow's first intraday tick fires at 09:30 ICT, intraday_breadth.py
+    sees the date roll, resets updates=[09:30 tick], and refreshes eod_history
+    to end at today. Round-trip stays clean.
+
+    No-ops gracefully when google.cloud.storage isn't installed (local runs).
+    """
+    if breadth is None or len(breadth) < 2:
+        log("Skipping intraday_breadth.json refresh: breadth has <2 rows.")
+        return
+    try:
+        from google.cloud import storage
+    except ImportError:
+        log("Skipping intraday_breadth.json refresh: google.cloud.storage unavailable (local run).")
+        return
+
+    def _row_to_breadth_dict(row, sample_size_default=100):
+        out = {}
+        for col in row.index:
+            period_token = col[3:].lstrip("0") or "0"
+            value = row[col]
+            out[f"mbz{period_token}"] = None if pd.isna(value) else float(value)
+        out["sample_size"] = sample_size_default
+        return out
+
+    today_idx = breadth.index[-1]
+    today_breadth = _row_to_breadth_dict(breadth.iloc[-1])
+
+    eod_rows = breadth.iloc[:-1].tail(49)
+    eod_history = []
+    for date_idx, row in eod_rows.iterrows():
+        entry = {
+            "kind": "eod",
+            "date": date_idx.date().isoformat(),
+            "time": date_idx.strftime("%d-%m"),
+            **_row_to_breadth_dict(row),
+        }
+        eod_history.append(entry)
+
+    close_tick = {
+        "kind": "intraday",
+        "time": "Đóng cửa",
+        "timestamp_ict": today_idx.strftime("%Y-%m-%d 14:45:00 +0700"),
+        **today_breadth,
+    }
+
+    now_ict = datetime.now(ICT)
+    payload = {
+        "date": today_idx.date().isoformat(),
+        "eod_history": eod_history,
+        "updates": [close_tick],
+        "last_updated_ict": now_ict.strftime("%H:%M %d/%m/%Y"),
+    }
+
+    try:
+        client = storage.Client()
+        blob = client.bucket(gcs_bucket).blob("intraday_breadth.json")
+        blob.cache_control = "no-cache, no-store, must-revalidate"
+        blob.upload_from_string(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            content_type="application/json",
+        )
+        log(
+            f"intraday_breadth.json refreshed: {len(eod_history)} EODs ending "
+            f"{eod_history[-1]['date']} + 1 'Đóng cửa' tick for {today_idx.date()}"
+        )
+    except Exception as exc:
+        log(f"WARNING: Failed to refresh intraday_breadth.json on GCS: {exc}")
+
+
 def load_us_vix_index_data(sessions_show=US_INDEX_SESSIONS):
     return _load_us_index_data("^VIX", "CBOE VIX", sessions_show, period="1y")
 
@@ -2032,6 +2112,11 @@ def main():
             OUTPUT_HTML.write_text(html_with_panel, encoding="utf-8")
         except Exception as exc:
             log(f"WARNING: Pre-breakout panel injection failed: {exc}")
+
+        # Refresh intraday_breadth.json on GCS so the intraday chart's rightmost
+        # point is today's close (not yesterday's last intraday tick) until
+        # tomorrow's 09:30 intraday job rolls it forward. No-op on local runs.
+        refresh_intraday_breadth_json(breadth)
 
         html_size = OUTPUT_HTML.stat().st_size
         last_three_tickers = get_last_three_combined_tickers(combined_path)
