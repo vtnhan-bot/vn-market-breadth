@@ -2,7 +2,11 @@
 """Build a 20-session Relative Strength matrix for the pinned crypto universe.
 
 Mirrors rs_matrix_3T.py (Vietnam stocks vs VNINDEX) but for crypto vs BTC:
-  - Source: yfinance daily bars
+  - Source: Binance public klines API (primary), yfinance fallback for symbols
+    not listed on Binance (e.g., KAS-USD). Binance publishes daily UTC bars
+    in real-time, so the prior UTC day is fresh by ~07:01 ICT — eliminates
+    Yahoo Finance's daily-aggregation lag that previously delayed crypto RS
+    by a full day.
   - Universe: crypto_universe.csv (top-50 pinned, BTC included as benchmark only)
   - Benchmark: BTC-USD (excluded from rated cohort — it's the denominator)
   - Composite RS Rating: 30% relative-performance percentile + 70% weighted-momentum percentile
@@ -28,7 +32,9 @@ BENCHMARK_TICKER = "BTC-USD"
 RS_LOOKBACK_CALENDAR_DAYS = 90
 RS_OUTPUT_SESSIONS = 20
 INITIAL_FETCH_BUFFER_DAYS = RS_LOOKBACK_CALENDAR_DAYS + 60
-YF_RATE_LIMIT_DELAY = 0.6  # yfinance is more permissive than vnstock; modest pacing
+YF_RATE_LIMIT_DELAY = 0.6  # yfinance fallback pacing
+BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
+BINANCE_FETCH_LIMIT = 200  # ~6.5 months of daily bars, well over RS_LOOKBACK_CALENDAR_DAYS
 
 LOGGER = logging.getLogger("rs_matrix_crypto")
 
@@ -123,8 +129,56 @@ def _save_cached_history(ticker: str, df: pd.DataFrame) -> None:
     df.to_csv(_cache_path(ticker), index=False, encoding="utf-8-sig")
 
 
+def _to_binance_symbol(yahoo_ticker: str) -> str:
+    """Map Yahoo-style 'BTC-USD' to Binance USDT pair 'BTCUSDT'."""
+    return yahoo_ticker.replace("-USD", "USDT")
+
+
+def _fetch_binance_klines(ticker: str, limit: int = BINANCE_FETCH_LIMIT) -> pd.DataFrame | None:
+    """Fetch daily OHLCV from Binance public klines API. Returns None on failure
+    (HTTP 400 for symbols not listed; network issues; empty response).
+
+    Binance's daily kline open_time is 00:00 UTC of the bar's date; close_time is
+    23:59:59 UTC of the same date. Today's UTC bar is in-progress until 00:00 UTC
+    of the next day — _drop_in_progress_utc_bar handles that on the caller side.
+    """
+    import urllib.request
+    import urllib.error
+    import json as _json
+
+    symbol = _to_binance_symbol(ticker)
+    url = f"{BINANCE_KLINES_URL}?symbol={symbol}&interval=1d&limit={limit}"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            raw = _json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        LOGGER.warning("%s (%s) Binance HTTP %d: %s", ticker, symbol, exc.code, exc.reason)
+        return None
+    except Exception as exc:
+        LOGGER.warning("%s (%s) Binance fetch failed: %s", ticker, symbol, exc)
+        return None
+
+    if not raw:
+        return None
+
+    rows = []
+    for kline in raw:
+        bar_date = datetime.fromtimestamp(kline[0] / 1000, tz=timezone.utc).date()
+        rows.append({
+            "time": bar_date,
+            "open": float(kline[1]),
+            "high": float(kline[2]),
+            "low": float(kline[3]),
+            "close": float(kline[4]),
+            "volume": float(kline[5]),
+            "ticker": ticker,
+        })
+    return pd.DataFrame(rows)
+
+
 def _fetch_yf_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
-    """Fetch daily OHLCV via yfinance. Returns None on failure."""
+    """Fetch daily OHLCV via yfinance. Returns None on failure. Kept as a fallback
+    for symbols not listed on Binance (e.g., KAS-USD)."""
     try:
         import yfinance as yf
         raw = yf.download(
@@ -146,38 +200,36 @@ def _fetch_yf_history(ticker: str, start_date: str, end_date: str) -> pd.DataFra
 
 
 def incremental_sync_history(ticker: str) -> tuple[pd.DataFrame, str]:
-    """Cache-first sync; appends only new bars when cached data exists."""
+    """Fetch daily OHLC, Binance primary + yfinance fallback + cache last-resort.
+
+    Binance returns the prior UTC day immediately after 00:00 UTC (07:00 ICT),
+    so the heatmap's rightmost session is always last UTC-trading-day, never
+    one-behind. yfinance is retained for the few coins not on Binance (KAS).
+    """
+    fresh = _fetch_binance_klines(ticker)
+    if fresh is not None and not fresh.empty:
+        fresh = _drop_in_progress_utc_bar(fresh)
+        if not fresh.empty:
+            _save_cached_history(ticker, fresh)
+            return fresh, "binance"
+
     today = date.today()
-    end_date = (today + timedelta(days=1)).isoformat()  # yfinance end is exclusive
+    end_date = (today + timedelta(days=1)).isoformat()
+    start_date = (today - timedelta(days=INITIAL_FETCH_BUFFER_DAYS)).isoformat()
+    fresh_yf = _fetch_yf_history(ticker, start_date, end_date)
+    if fresh_yf is not None and not fresh_yf.empty:
+        _save_cached_history(ticker, fresh_yf)
+        return fresh_yf, "yfinance_fallback"
 
     cached = _load_cached_history(ticker)
-    if cached is None or cached.empty:
-        start_date = (today - timedelta(days=INITIAL_FETCH_BUFFER_DAYS)).isoformat()
-        fetched = _fetch_yf_history(ticker, start_date, end_date)
-        if fetched is None or fetched.empty:
-            raise RuntimeError(f"{ticker}: initial yfinance fetch failed")
-        _save_cached_history(ticker, fetched)
-        return fetched, "initial_fetch"
+    if cached is not None and not cached.empty:
+        LOGGER.warning(
+            "%s: Binance + yfinance both failed; using cache through %s",
+            ticker, cached["time"].max(),
+        )
+        return cached, "cache_fallback"
 
-    last_date = cached["time"].max()
-    if pd.isna(last_date) or last_date >= today - timedelta(days=1):
-        # Within ~1 day of today; cache is fresh enough for daily-bar RS
-        return cached, "cache_hit"
-
-    start_date = last_date.isoformat()
-    fresh = _fetch_yf_history(ticker, start_date, end_date)
-    if fresh is None or fresh.empty:
-        LOGGER.warning("%s: refresh failed; using cache through %s", ticker, last_date)
-        return cached, "cache_hit"
-
-    fresh = fresh[fresh["time"] > last_date]
-    if fresh.empty:
-        return cached, "cache_hit"
-
-    merged = pd.concat([cached, fresh], ignore_index=True)
-    merged = merged.drop_duplicates(subset=["time"], keep="last").sort_values("time").reset_index(drop=True)
-    _save_cached_history(ticker, merged)
-    return merged, "incremental_append"
+    raise RuntimeError(f"{ticker}: Binance, yfinance, and cache all failed")
 
 
 def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
@@ -235,7 +287,7 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
     }
 
     rated_universe = universe_df[universe_df["ticker"] != BENCHMARK_TICKER].copy()
-    sync_counters = {"cache_hit": 0, "incremental_append": 0, "initial_fetch": 0}
+    sync_counters = {"binance": 0, "yfinance_fallback": 0, "cache_fallback": 0}
     failed: list[str] = []
     rows: list[dict] = []
 
@@ -317,9 +369,9 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
         len(matrix), matrix["session_date"].nunique(),
     )
     LOGGER.info(
-        "Sync summary | cache hits=%s | appended=%s | initial fetches=%s | benchmark=%s",
-        sync_counters["cache_hit"], sync_counters["incremental_append"],
-        sync_counters["initial_fetch"], benchmark_sync,
+        "Sync summary | binance=%s | yfinance_fallback=%s | cache_fallback=%s | benchmark=%s",
+        sync_counters["binance"], sync_counters["yfinance_fallback"],
+        sync_counters["cache_fallback"], benchmark_sync,
     )
     if failed:
         LOGGER.warning("NON-FATAL: %s coins failed: %s", len(failed), ", ".join(failed))
