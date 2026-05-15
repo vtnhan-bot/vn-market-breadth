@@ -2,14 +2,15 @@
 
 > **Purpose**: a single document that lets a senior engineer (or a future Claude session) get from cold-start to confidently shipping changes in under 30 minutes. Read this first; it points you at everything else.
 >
-> **Last refresh**: 2026-05-07 (after the intraday-breadth + crypto-RS shipment).
+> **Last refresh**: 2026-05-15 (after the May 12–15 shipment: ex-Vingroup chart reverted; latest-data labels on every chart/table; US-indices partial-bar drop; intraday "Đóng cửa" rollover at EOD; freshness check branched strict/permissive; crypto data source switched from Yahoo to Binance; `market-breadth-us-close` 07:30 ICT cron added; cost-protection layer documented).
 >
 > **Topic deep-dives** in [`docs/`](docs/):
-> - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling).
+> - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling, Đóng cửa rollover).
 > - [`docs/RS_AND_PREBREAKOUT.md`](docs/RS_AND_PREBREAKOUT.md) — composite RS Rating formula + pre-breakout signal layers.
-> - [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md) — top-50 crypto vs BTC heatmap, UTC-vs-ICT timing.
+> - [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md) — top-50 crypto vs BTC heatmap, Binance-primary + yfinance-fallback, UTC-vs-ICT timing.
 > - [`docs/UNIVERSES.md`](docs/UNIVERSES.md) — which ticker file is used where, and why breadth ≠ RS universe.
-> - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — manual triggers, image refresh, common diagnostic recipes.
+> - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — three schedules, freshness branching, manual triggers, image refresh, common diagnostic recipes.
+> - [`docs/COST_PROTECTION.md`](docs/COST_PROTECTION.md) — budget alerts + 100% auto-killswitch + 80% Telegram alert.
 
 ---
 
@@ -21,12 +22,14 @@
 | Live URL | https://storage.googleapis.com/vn-market-breadth/index.html |
 | Daily refresh | Weekdays 15:15 ICT (after VN market close at 14:45) — full pipeline rebuild, finishes ~15:28 |
 | Intraday refresh | Weekdays every 15 min during 09:30–11:30 / 13:00–14:45 ICT — breadth panel only |
+| Morning refresh | Tue–Sat 07:30 ICT — pulls fresh US EOD (VIX/Nasdaq) and fresh UTC crypto daily bar (Binance) before VN session opens. See `docs/OPERATIONS.md`. |
 | Repo | https://github.com/vtnhan-bot/vn-market-breadth (master) |
 | Local working dir | `D:\Claude\Market on website` (Windows) |
 | GCP project | `project-feb6df0e-9749-4925-b4e` (region `asia-southeast1`) |
 | GCS bucket | `vn-market-breadth` |
-| Cloud Run jobs | `market-breadth-job` (daily), `intraday-breadth-job` (every 15 min during VN trading hours) |
-| Cloud Scheduler | `market-breadth-schedule` `15 15 * * 1-5` ICT; `intraday-breadth-schedule` `*/15 9-14 * * 1-5` ICT |
+| Cloud Run jobs | `market-breadth-job` (full pipeline, runs at both 07:30 ICT and 15:15 ICT cron schedules), `intraday-breadth-job` (every 15 min during VN trading hours) |
+| Cloud Scheduler | `intraday-breadth-schedule` `*/15 9-14 * * 1-5` · `market-breadth-schedule` `15 15 * * 1-5` · `market-breadth-us-close` `30 7 * * 2-6` — all Asia/Ho_Chi_Minh |
+| Cost protection | `Market dashboard 120000 VND cap` budget on billing acct `017EA5-270660-A8352F`; `billing-killswitch` Cloud Function unlinks billing at 100%; `telegram-budget-alert` Cloud Function pings `@SuperGemini_bot` at 80%. See `docs/COST_PROTECTION.md`. |
 | Primary user | CTO / portfolio manager — visits the URL daily, makes trade decisions from it |
 
 ---

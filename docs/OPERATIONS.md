@@ -6,12 +6,13 @@ Common operational situations and how to handle them. All times in **Asia/Ho_Chi
 
 | Schedule | Cron (ICT) | Triggers | Avg duration | Purpose |
 |---|---|---|---|---|
-| `market-breadth-schedule` | `15 15 * * 1-5` | `market-breadth-job` | ~13–15 min (finishes ~15:28) | Daily after-3pm pipeline: download fresh EOD, build matrices, regenerate HTML, upload to GCS, persist `combined_dataset.csv` + `rs_matrix_3T.csv` + `rs_matrix_crypto.csv` to `gs://vn-market-breadth/intraday/` |
-| `intraday-breadth-schedule` | `*/15 9-14 * * 1-5` | `intraday-breadth-job` | ~10–30s | Every 15 min during VN trading hours; the script's own check no-ops outside 09:30–11:30 / 13:00–14:45 |
+| `market-breadth-schedule` | `15 15 * * 1-5` | `market-breadth-job` | ~13–15 min (finishes ~15:28) | Daily post-VN-close pipeline. Hits the strict freshness branch (`verify_fresh_eod_dataset`): today's `data/<today>/combined_dataset.csv` must exist and be modified after 15:00 ICT. Builds matrices, regens HTML, uploads, persists `combined_dataset.csv` + `rs_matrix_3T.csv` + `rs_matrix_crypto.csv` to `gs://vn-market-breadth/intraday/`. End of run also rewrites `intraday_breadth.json` to a `Đóng cửa` rightmost-tick state. |
+| `intraday-breadth-schedule` | `*/15 9-14 * * 1-5` | `intraday-breadth-job` | ~10–30s | Every 15 min during VN trading hours; the script's own check no-ops outside 09:30–11:30 / 13:00–14:45. First tick after a new day's 09:00 cron rolls `intraday_breadth.json` forward (incorporates yesterday's close into `eod_history`). |
+| `market-breadth-us-close` *(added May 2026)* | `30 7 * * 2-6` | `market-breadth-job` | ~9–10 min | Post-US-close + post-UTC-crypto-close refresh. 07:30 ICT is 30 min after the 07:00 ICT crypto UTC daily-bar close and 3–4h after US market close. Hits the permissive freshness branch (`now < 15:00 ICT` → fall back to most-recent `data/<DATE>/` folder). Re-pulls VIX / Nasdaq via yfinance (skipping any in-progress US daily bar) and crypto via Binance, then republishes HTML. |
 
 ## Verbs you'll actually use
 
-### Trigger the daily pipeline manually (after 15:00 ICT — freshness gate aborts before)
+### Trigger the daily pipeline manually (any time of day)
 
 ```bash
 gcloud run jobs execute market-breadth-job \
@@ -19,6 +20,11 @@ gcloud run jobs execute market-breadth-job \
   --region=asia-southeast1 \
   --wait
 ```
+
+`verify_fresh_eod_dataset()` branches on the current ICT time:
+
+- **`now ≥ 15:00 ICT`** → strict path. Requires today's `data/<today>/combined_dataset.csv` to exist and be modified after 15:00 ICT (matches the production 15:15 ICT cron). If you trigger after 15:00 ICT but today's EOD download hasn't run, the pipeline aborts with `CRITICAL: EOD Data Not Fresh`.
+- **`now < 15:00 ICT`** → permissive path. Walks `DATA_DIR.glob("*/combined_dataset.csv")` and picks the most recent dated folder. Logs `Pre-15:00 ICT run; using most-recent EOD dataset <folder>`. This is what the 07:30 ICT `market-breadth-us-close` cron and ad-hoc morning triggers hit. Breadth chart reflects the most recent available close (often yesterday), while VIX/Nasdaq/crypto get re-fetched fresh.
 
 ### Trigger an intraday tick manually (any time)
 

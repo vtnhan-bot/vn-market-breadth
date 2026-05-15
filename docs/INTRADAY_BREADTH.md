@@ -6,7 +6,9 @@ A live breadth chart that updates every 15 minutes during VN trading hours, disp
 
 **X axis** — categorical strings, never date-parsed (Plotly `type: 'category'`):
 - Left: 49 EOD daily labels in `DD-MM` format (e.g. `24-02`, `25-02`, …, `06-05` if T = today is 07-05).
-- Right: 1 intraday label in `HH:MM` ICT (e.g. `14:45`).
+- Right: 1 "latest tick" label whose value depends on time of day:
+  - **`HH:MM` ICT** during the VN session (09:30, 09:45, …, 14:30) — the in-progress intraday tick written by `intraday-breadth-job`.
+  - **`Đóng cửa`** outside the session (after the 15:15 ICT EOD run, throughout the overnight gap, and until the next 09:00 ICT tick rolls the day forward) — a synthetic close tick written by `market_breadth.py:refresh_intraday_breadth_json()` carrying today's EOD breadth values. Added in commit `39c68f2` to avoid the chart showing yesterday's stale `14:30` tick at 08:00 the next morning.
 
 **Y axis** — `% trên SMA`, range 0–100, `%` suffix.
 
@@ -84,6 +86,17 @@ Browser  ──▶ fetch intraday_breadth.json every 60s ──▶ Plotly.react(
 ```
 
 The JS reads `eod_history.slice(-49).concat([updates[updates.length - 1]])` — defensive slice so the chart stays at exactly 50 points even if `eod_history` ever gets longer.
+
+### Who writes the JSON when
+
+| Writer | When | What it writes |
+|---|---|---|
+| `intraday_breadth.py` (every 15 min cron during 09:30–14:45 ICT) | Inside trading window | Appends current `HH:MM` tick to `updates[]`. On the first tick of a new day (`existing.date != today_str`), resets the JSON: `date=today`, `eod_history=` last 49 EODs ending T-1, `updates=[09:00 tick]`. |
+| `market_breadth.py:refresh_intraday_breadth_json()` | End of every EOD run (15:15 ICT scheduled or any ad-hoc trigger) | Overwrites the JSON to a "post-close" state: `date=today_just_closed`, `eod_history=` last 49 EODs ending T-1, `updates=[{time:"Đóng cửa", …today's EOD breadth values}]`. This makes the chart's rightmost column read `Đóng cửa` from 15:15 ICT today through tomorrow's 09:00 first intraday tick. |
+
+Conflict avoidance: the EOD writer only fires once per day at/after 15:15 ICT (after the intraday cron has stopped at 14:45). The intraday cron is the sole writer 09:00–14:45 ICT. They don't race.
+
+**mbz key format gotcha**: `intraday_breadth.py` and the EOD writer both produce keys like `mbz3`, `mbz5`, `mbz10`, `mbz20`, `mbz50`, `mbz200` (no zero-padding for single digits). `market_breadth.py`'s breadth DataFrame uses `mbz03`, `mbz05` internally — `refresh_intraday_breadth_json` strips the leading zero when copying values across. Don't normalize either side without updating the other.
 
 ## Cloud infrastructure
 
