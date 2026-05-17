@@ -34,6 +34,7 @@ ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 MA_PERIODS      = [3, 5, 10, 20, 50, 200]
 SESSIONS_SHOW   = 50
 US_INDEX_SESSIONS = 100  # CBOE VIX & Nasdaq Composite display window
+DXY_SESSIONS = 50         # US Dollar Index (DXY) display window
 IS_CI           = bool(os.environ.get("GITHUB_ACTIONS"))
 CACHE_HOURS     = 4     # Re-fetch if cache older than N hours
 AUDIT_EXPORT_FORMAT = "csv"
@@ -746,6 +747,10 @@ def load_us_vix_index_data(sessions_show=US_INDEX_SESSIONS):
 def load_us_nasdaq_index_data(sessions_show=US_INDEX_SESSIONS):
     return _load_us_index_data("^IXIC", "Nasdaq Composite", sessions_show, period="1y")
 
+
+def load_us_dxy_index_data(sessions_show=DXY_SESSIONS):
+    return _load_us_index_data("DX-Y.NYB", "US Dollar Index (DXY)", sessions_show, period="1y")
+
 # ─── STEP 1: Read tickers (Excel if available, else CSV fallback) ─────────────
 def read_tickers():
     csv_path = SCRIPT_DIR / "tickers.csv"
@@ -934,6 +939,7 @@ def build_html(
     price_data=None,
     us_vix_df=None,
     us_nasdaq_df=None,
+    us_dxy_df=None,
     rs_crypto_payload=None,
 ):
     dates = [d.strftime("%d-%m-%Y") for d in breadth.index]
@@ -1062,6 +1068,27 @@ def build_html(
             ndx_chart_data = json.dumps([ndx_candle])
             ndx_vol_data = json.dumps([ndx_bar])
 
+    # US Dollar Index (DXY) chart data (50 sessions)
+    dxy_chart_data = "null"
+    if us_dxy_df is not None and not us_dxy_df.empty:
+        dxy = us_dxy_df.copy()
+        dxy["time"] = pd.to_datetime(dxy["time"])
+        dxy = dxy.tail(DXY_SESSIONS)
+        if not dxy.empty:
+            dxy_dates = [d.strftime("%d-%m-%Y") for d in dxy["time"]]
+            dxy_candle = {
+                "type": "candlestick",
+                "x": dxy_dates,
+                "open": dxy["open"].round(3).tolist(),
+                "high": dxy["high"].round(3).tolist(),
+                "low": dxy["low"].round(3).tolist(),
+                "close": dxy["close"].round(3).tolist(),
+                "name": "DXY",
+                "increasing": {"line": {"color": "#43A047"}, "fillcolor": "#43A047"},
+                "decreasing": {"line": {"color": "#E53935"}, "fillcolor": "#E53935"},
+            }
+            dxy_chart_data = json.dumps([dxy_candle])
+
     # Per-chart "latest data" labels (Vietnam time). Each label reports the
     # most recent session that feeds the panel above it. Empty string when
     # the panel itself is hidden (no data).
@@ -1089,6 +1116,12 @@ def build_html(
         ndx_latest_label = (
             f'<div class="data-as-of">Dữ liệu mới nhất: '
             f'{_fmt_latest(pd.to_datetime(us_nasdaq_df["time"]).max())} (US EOD)</div>'
+        )
+    dxy_latest_label = ""
+    if us_dxy_df is not None and not us_dxy_df.empty:
+        dxy_latest_label = (
+            f'<div class="data-as-of">Dữ liệu mới nhất: '
+            f'{_fmt_latest(pd.to_datetime(us_dxy_df["time"]).max())} (US EOD)</div>'
         )
     rs_latest_label = ""
     if rs_payload and rs_payload.get("dates"):
@@ -1640,6 +1673,9 @@ def build_html(
   <div id="nasdaq-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
   {ndx_latest_label}
 
+  <div id="dxy-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
+  {dxy_latest_label}
+
   <div class="panel">
     <h2>🧮 Nhận định tuần tới <span class="tag">{analysis['last_date']}</span></h2>
     <div class="composite">
@@ -1847,6 +1883,37 @@ if (ndxData && ndxVol) {{
   const ndxChart = document.getElementById('nasdaq-chart');
   if (ndxChart) {{
     ndxChart.style.display = 'none';
+  }}
+}}
+
+// US Dollar Index (DXY) chart (50 sessions)
+const dxyData = {dxy_chart_data};
+if (dxyData) {{
+  const dxyLayout = {{
+    title: {{ text: 'US Dollar Index (DXY) - 50 phiên', font: {{ color: '#c0392b', size: 18 }} }},
+    paper_bgcolor: '#fff8f0',
+    plot_bgcolor: '#fff8f0',
+    xaxis: {{
+      type: 'category',
+      tickangle: -45,
+      tickfont: {{ size: 10 }},
+      gridcolor: '#ead8c0',
+      rangeslider: {{ visible: false }},
+    }},
+    yaxis: {{
+      title: 'DXY',
+      gridcolor: '#ead8c0',
+    }},
+    showlegend: false,
+    hovermode: 'x unified',
+    margin: {{ l: 60, r: 60, t: 60, b: 100 }},
+    height: 420,
+  }};
+  Plotly.newPlot('dxy-chart', dxyData, dxyLayout, config);
+}} else {{
+  const dxyChart = document.getElementById('dxy-chart');
+  if (dxyChart) {{
+    dxyChart.style.display = 'none';
   }}
 }}
 
@@ -2081,6 +2148,13 @@ def main():
         else:
             log(f"Nasdaq Composite rows loaded: {len(us_nasdaq_df)}")
 
+        log(f"Loading US Dollar Index DXY ({DXY_SESSIONS} sessions) ...")
+        us_dxy_df = load_us_dxy_index_data(DXY_SESSIONS)
+        if us_dxy_df.empty:
+            log("WARNING: DXY chart will be hidden.")
+        else:
+            log(f"DXY rows loaded: {len(us_dxy_df)}")
+
         log("Building HTML ...")
         html = build_html(
             breadth,
@@ -2093,6 +2167,7 @@ def main():
             price_data,
             us_vix_df,
             us_nasdaq_df,
+            us_dxy_df=us_dxy_df,
             rs_crypto_payload=rs_crypto_payload,
         )
         with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
