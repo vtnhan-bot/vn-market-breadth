@@ -34,7 +34,7 @@ ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 MA_PERIODS      = [3, 5, 10, 20, 50, 200]
 SESSIONS_SHOW   = 50
 US_INDEX_SESSIONS = 100  # CBOE VIX & Nasdaq Composite display window
-DXY_SESSIONS = 50         # US Dollar Index (DXY) display window
+DXY_SESSIONS = 150        # US Dollar Index (DXY) display window
 IS_CI           = bool(os.environ.get("GITHUB_ACTIONS"))
 CACHE_HOURS     = 4     # Re-fetch if cache older than N hours
 AUDIT_EXPORT_FORMAT = "csv"
@@ -1890,7 +1890,7 @@ if (ndxData && ndxVol) {{
 const dxyData = {dxy_chart_data};
 if (dxyData) {{
   const dxyLayout = {{
-    title: {{ text: 'US Dollar Index (DXY) - 50 phiên', font: {{ color: '#c0392b', size: 18 }} }},
+    title: {{ text: 'US Dollar Index (DXY) - 150 phiên', font: {{ color: '#c0392b', size: 18 }} }},
     paper_bgcolor: '#fff8f0',
     plot_bgcolor: '#fff8f0',
     xaxis: {{
