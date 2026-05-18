@@ -372,6 +372,15 @@ def main() -> int:
         "Updated gs://%s/%s — %d EOD days + %d intraday ticks (%s)",
         GCS_BUCKET, GCS_INTRADAY_KEY, len(doc.get("eod_history", [])), len(doc.get("updates", [])), doc["date"],
     )
+
+    # Intraday RS snapshot — supplementary, NEVER blocks the breadth tick.
+    # Uses the same combined_dataset.csv we already downloaded.
+    try:
+        from intraday_rs_3T import run_intraday_rs
+        run_intraday_rs(now_ict, combined_local)
+    except Exception as exc:
+        LOGGER.warning("Intraday RS step crashed (non-fatal): %s", exc)
+
     return 0
 
 

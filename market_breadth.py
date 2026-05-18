@@ -2010,6 +2010,126 @@ async function pollIntraday() {{
 
 pollIntraday();
 setInterval(pollIntraday, 60 * 1000);
+
+// ── Intraday RS heatmap patch ─────────────────────────────────────────────
+// Fetches intraday_rs_3T.json every 60s and prepends a new leftmost column
+// to the RS table with today's HH:MM-tagged rs_rating. Outside market hours
+// the JSON is from yesterday and we don't show the prepended column (the
+// EOD pipeline already overwrote the heatmap with settled values at 15:15).
+const INTRADAY_RS_URL = 'https://storage.googleapis.com/vn-market-breadth/intraday_rs_3T.json';
+
+function rsToneClass(rs) {{
+  if (rs === null || rs === undefined) return 'rs-cell rs-empty';
+  if (rs >= 90) return 'rs-cell rs-leader';
+  if (rs >= 70) return 'rs-cell rs-strong';
+  if (rs >= 50) return 'rs-cell rs-neutral';
+  return 'rs-cell rs-laggard';
+}}
+
+function rsChangeClass(pct) {{
+  if (pct === null || pct === undefined || isNaN(pct)) return 'rs-change';
+  if (pct > 0) return 'rs-change rs-change-up';
+  if (pct < 0) return 'rs-change rs-change-down';
+  return 'rs-change rs-change-flat';
+}}
+
+function todayIsoIct() {{
+  const now = new Date();
+  // Build YYYY-MM-DD in Asia/Ho_Chi_Minh (UTC+7).
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const ict = new Date(utcMs + 7 * 3600000);
+  const y = ict.getUTCFullYear();
+  const m = String(ict.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(ict.getUTCDate()).padStart(2, '0');
+  return y + '-' + m + '-' + d;
+}}
+
+function applyIntradayRs(doc) {{
+  const table = document.getElementById('rs-table');
+  if (!table) return;
+  if (!doc || !Array.isArray(doc.rows) || doc.rows.length === 0) return;
+
+  // Only patch if the JSON is for today. Otherwise (stale, weekend, pre-EOD)
+  // leave the table as the EOD pipeline rendered it.
+  if (doc.session_date !== todayIsoIct()) return;
+
+  const tickTime = doc.tick_time_ict || '';
+  const headerLabel = tickTime || 'Hôm nay';
+
+  // Build ticker -> row map for quick lookup.
+  const byTicker = {{}};
+  for (const r of doc.rows) byTicker[(r.ticker || '').toUpperCase()] = r;
+
+  const headerRow = table.querySelector('thead tr');
+  if (!headerRow) return;
+
+  // Find or create the intraday header (id='rs-th-intraday', flagged so we
+  // can replace it on the next tick instead of accumulating columns).
+  let intraHead = headerRow.querySelector('th[data-intraday="1"]');
+  if (!intraHead) {{
+    intraHead = document.createElement('th');
+    intraHead.setAttribute('data-intraday', '1');
+    intraHead.classList.add('rs-th-intraday');
+    // Insert right after the sticky 'Ticker' column.
+    const stickyTh = headerRow.querySelector('th.rs-sticky-col') || headerRow.firstElementChild;
+    stickyTh.parentNode.insertBefore(intraHead, stickyTh.nextSibling);
+  }}
+  intraHead.textContent = headerLabel;
+  intraHead.title = 'Cập nhật intraday — chốt sau 14:45';
+
+  // Same for each body row.
+  const bodyRows = table.querySelectorAll('tbody tr');
+  bodyRows.forEach((tr) => {{
+    const ticker = (tr.getAttribute('data-ticker') || '').toUpperCase();
+    const data = byTicker[ticker];
+
+    let cell = tr.querySelector('td[data-intraday="1"]');
+    if (!cell) {{
+      cell = document.createElement('td');
+      cell.setAttribute('data-intraday', '1');
+      const stickyTd = tr.querySelector('td.rs-ticker') || tr.firstElementChild;
+      stickyTd.parentNode.insertBefore(cell, stickyTd.nextSibling);
+    }}
+
+    if (!data) {{
+      cell.className = 'rs-cell rs-empty';
+      cell.innerHTML = '<div class="rs-score">–</div><div class="rs-change"></div>';
+      return;
+    }}
+
+    const rsText = (data.rs_rating === null || data.rs_rating === undefined) ? '–' : data.rs_rating;
+    cell.className = rsToneClass(data.rs_rating);
+    cell.setAttribute('data-rs', String(rsText));
+    const dailyTxt = (data.daily_change_pct === null || data.daily_change_pct === undefined)
+      ? ''
+      : (data.daily_change_pct >= 0 ? '+' : '') + Number(data.daily_change_pct).toFixed(2) + '%';
+    cell.innerHTML =
+      '<div class="rs-score">' + rsText + '</div>' +
+      '<div class="' + rsChangeClass(data.daily_change_pct) + '">' + dailyTxt + '</div>';
+  }});
+
+  // Update the existing rs-update-time label so the user sees the freshness.
+  const panel = table.closest ? table.closest('.panel') : null;
+  const label = panel ? panel.querySelector('.rs-update-time') : null;
+  if (label && doc.last_updated_ict) {{
+    label.textContent = 'Cập nhật intraday: ' + doc.last_updated_ict +
+      ' — cột mới nhất chốt sau 14:45';
+  }}
+}}
+
+async function pollIntradayRs() {{
+  try {{
+    const res = await fetch(INTRADAY_RS_URL + '?_=' + Date.now(), {{cache: 'no-store'}});
+    if (!res.ok) return;
+    const doc = await res.json();
+    applyIntradayRs(doc);
+  }} catch (err) {{
+    // Silent — intraday RS is supplementary.
+  }}
+}}
+
+pollIntradayRs();
+setInterval(pollIntradayRs, 60 * 1000);
 </script>
 </body>
 </html>
