@@ -2099,7 +2099,8 @@ function applyIntradayRs(doc) {{
   const byTicker = {{}};
   for (const r of doc.rows) byTicker[(r.ticker || '').toUpperCase()] = r;
 
-  const headerRow = table.querySelector('thead tr');
+  // headerRow already declared at the top of this function for the guard
+  // check; reuse it here. Bail if the table somehow has no thead.
   if (!headerRow) return;
 
   // Find or create the intraday header (id='rs-th-intraday', flagged so we
