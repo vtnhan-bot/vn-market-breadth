@@ -2044,9 +2044,48 @@ function todayIsoIct() {{
   return y + '-' + m + '-' + d;
 }}
 
+function todayDdMmIct() {{
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const ict = new Date(utcMs + 7 * 3600000);
+  const d = String(ict.getUTCDate()).padStart(2, '0');
+  const m = String(ict.getUTCMonth() + 1).padStart(2, '0');
+  return d + '-' + m;
+}}
+
+function removeIntradayDom(table) {{
+  const headerRow = table.querySelector('thead tr');
+  if (headerRow) {{
+    const oldTh = headerRow.querySelector('th[data-intraday="1"]');
+    if (oldTh) oldTh.remove();
+  }}
+  table.querySelectorAll('tbody tr td[data-intraday="1"]').forEach((td) => td.remove());
+}}
+
 function applyIntradayRs(doc) {{
   const table = document.getElementById('rs-table');
   if (!table) return;
+
+  // If the heatmap's leftmost EOD column header is already today's DD-MM,
+  // the EOD pipeline has caught up — drop any leftover intraday column and
+  // skip the prepend. Runs every poll so the column disappears within ~60s
+  // of the 15:15 ICT EOD overwrite.
+  const headerRow = table.querySelector('thead tr');
+  if (headerRow) {{
+    const eodTh = (() => {{
+      for (const th of headerRow.querySelectorAll('th')) {{
+        if (th.classList.contains('rs-sticky-col')) continue;
+        if (th.getAttribute('data-intraday') === '1') continue;
+        return th;
+      }}
+      return null;
+    }})();
+    if (eodTh && eodTh.textContent.trim() === todayDdMmIct()) {{
+      removeIntradayDom(table);
+      return;
+    }}
+  }}
+
   if (!doc || !Array.isArray(doc.rows) || doc.rows.length === 0) return;
 
   // Only patch if the JSON is for today. Otherwise (stale, weekend, pre-EOD)
