@@ -157,3 +157,52 @@ gcloud secrets versions disable <old_version> --secret=vnstock-api-key
 - **`python rs_universe_generator.py --sync-universe`** — would wipe the 58 manual additions in `rs_fixed_tickers.csv`. See [UNIVERSES.md](UNIVERSES.md).
 - **`gsutil rm gs://vn-market-breadth/intraday/combined_dataset.csv`** — would brick the intraday job AND `rs_matrix_3T.py` (which reads OHLC directly from this file post-`4a6b13a`) until the next 15:15 ICT pipeline rewrites it.
 - **`git push --force` on master** — would rewrite published commits other clients (Cloud Build, GHA) reference.
+
+## ⚠️ Recurring gotchas
+
+### Dockerfile COPY list is explicit — new Python modules must be added
+
+The `Dockerfile` does not `COPY . ./`. It enumerates each Python file by name:
+
+```dockerfile
+COPY run_daily_update.py \
+     eod_batch_downloader.py \
+     rs_universe_generator.py \
+     rs_matrix_3T.py \
+     rs_matrix_crypto.py \
+     ...
+     intraday_breadth.py \
+     intraday_rs_3T.py \
+     vnindex_ex_vin.py \
+     ./
+```
+
+If you add a new Python module that ANY entrypoint imports, you must also add it to the `Dockerfile` COPY list. The signature failure is `ModuleNotFoundError: No module named 'X'` at the start of the next Cloud Run execution, with the daily pipeline aborting at exit code 1 (we tripped this twice: commit `ac44d58` adding `intraday_rs_3T.py`, then `5a691fc` adding `vnindex_ex_vin.py`).
+
+When this happens you'll also see the dashboard go stale because the EOD pipeline never reaches the HTML-upload step.
+
+### Cloud Run jobs pin `:latest` to a digest at update time
+
+A `gcloud run jobs update --image ...:latest` resolves the tag to the current digest and stores that digest in the job spec. After a new build, the registry's `:latest` tag points elsewhere, but the *job* still points at the old digest until you `gcloud run jobs update` again.
+
+If a fresh push doesn't seem to take effect (e.g., new env vars or code missing from the running container), check the digest:
+
+```bash
+gcloud run jobs describe market-breadth-job --region=asia-southeast1 \
+  --project=project-feb6df0e-9749-4925-b4e \
+  --format="value(spec.template.spec.template.spec.containers[0].image)"
+```
+
+GH Actions has a step that re-pins after every build; if that's failing, re-pin manually:
+
+```bash
+gcloud run jobs update market-breadth-job --region=asia-southeast1 \
+  --project=project-feb6df0e-9749-4925-b4e \
+  --image=asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest
+```
+
+### `eod_batch_downloader.py` does NOT drop today's partial bar
+
+If you trigger `market-breadth-job` manually *during* VN trading hours (09:00–14:45 ICT) on a weekday, vnstock returns an in-progress row with today's date and `close = current intraday price`. That row leaks into `combined_dataset.csv` and the RS / breadth heatmaps render an `18-05`-style column that's actually an intraday snapshot, not a settled close. The 15:15 ICT scheduled run fixes this automatically (it fetches *after* the 14:45 close, so the bar is settled).
+
+If you need a manual mid-session refresh, accept the partial-bar caveat or wait until after 15:00 ICT.

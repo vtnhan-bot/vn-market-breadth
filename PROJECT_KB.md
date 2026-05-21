@@ -2,14 +2,16 @@
 
 > **Purpose**: a single document that lets a senior engineer (or a future Claude session) get from cold-start to confidently shipping changes in under 30 minutes. Read this first; it points you at everything else.
 >
-> **Last refresh**: 2026-05-15 (after the May 12–15 shipment: ex-Vingroup chart reverted; latest-data labels on every chart/table; US-indices partial-bar drop; intraday "Đóng cửa" rollover at EOD; freshness check branched strict/permissive; crypto data source switched from Yahoo to Binance; `market-breadth-us-close` 07:30 ICT cron added; cost-protection layer documented).
+> **Last refresh**: 2026-05-22 (after the May 17–22 shipment: DXY 150-session chart below Nasdaq; intraday RS heatmap with HH:MM-tagged leftmost column + EOD-catch-up guard; VN-Index ex-Vingroup line chart below the VN-Index candlestick).
 >
 > **Topic deep-dives** in [`docs/`](docs/):
-> - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling, Đóng cửa rollover).
+> - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling, Đóng cửa rollover, intraday-RS sibling hook).
+> - [`docs/INTRADAY_RS.md`](docs/INTRADAY_RS.md) — the live 15-min RS heatmap update for 230 VN tickers (HH:MM column, post-EOD JS guard, vnstock price_board source).
 > - [`docs/RS_AND_PREBREAKOUT.md`](docs/RS_AND_PREBREAKOUT.md) — composite RS Rating formula + pre-breakout signal layers.
 > - [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md) — top-50 crypto vs BTC heatmap, Binance-primary + yfinance-fallback, UTC-vs-ICT timing.
+> - [`docs/VNINDEX_EX_VIN.md`](docs/VNINDEX_EX_VIN.md) — VN-Index excluding VIC/VHM/VRE; Paasche-formula derivation, mcap proxy, ±0.01 calibration check.
 > - [`docs/UNIVERSES.md`](docs/UNIVERSES.md) — which ticker file is used where, and why breadth ≠ RS universe.
-> - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — three schedules, freshness branching, manual triggers, image refresh, common diagnostic recipes.
+> - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — three schedules, freshness branching, manual triggers, image refresh, Dockerfile-COPY trap, common diagnostic recipes.
 > - [`docs/COST_PROTECTION.md`](docs/COST_PROTECTION.md) — budget alerts + 100% auto-killswitch + 80% Telegram alert.
 
 ---
@@ -41,17 +43,19 @@ The page (`market_breadth.html`) is built by `market_breadth.py` and uploaded to
 1. **EOD Breadth chart** — % of top-100 HOSE+HNX stocks above SMA-3/5/10/20/50/200 over the last 50 sessions. Six lines, line widths/dashes per the shared color scheme. The headline indicator. Universe = `tickers.csv`.
 2. **📡 Intraday breadth chart** *(new — May 2026)* — same 6 MA periods, same top-100 universe, same color/style as the EOD chart. Shows 49 EOD days ending T-1 + 1 live intraday point at the rightmost, refreshed every 15 min during VN trading hours via JS polling of `gs://vn-market-breadth/intraday_breadth.json`. See [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md).
 3. **VNINDEX 50-session candlestick** with volume.
-4. **CBOE VIX — 100 phiên** candlestick (yfinance `^VIX`).
-5. **Nasdaq Composite — 100 phiên** candlestick (yfinance `^IXIC`).
-6. **Breadth detail tables** — current SMA-N readings + day/week deltas, and a composite gauge with a Vietnamese-language verdict ("THẬN TRỌNG" / "TÍCH CỰC" / etc.).
-7. **🚀 Pre-breakout panel** — two-layer scanner over the unified RS universe (`rs_fixed_tickers.csv`, ~230 names), now **gated on the composite RS Rating** from the matrix (replaces the older Mansfield/RS-line constructions):
+4. **VN-Index vs VN-Index loại VIC/VHM/VRE — 50 phiên** *(new — May 2026)* — two-line chart, both computed by the same Paasche formula `ex_vin_index[t] = VNINDEX[t] × (ex_vin_mcap[t] / total_mcap[t])`. Day-0 starting values differ by Vin trio's day-0 weight in HOSE; no anchor fudge. Subtitle reports today's Vin-trio HOSE share and the 50-session % spread. See [`docs/VNINDEX_EX_VIN.md`](docs/VNINDEX_EX_VIN.md).
+5. **CBOE VIX — 100 phiên** candlestick (yfinance `^VIX`).
+6. **Nasdaq Composite — 100 phiên** candlestick (yfinance `^IXIC`).
+7. **US Dollar Index (DXY) — 150 phiên** *(new — May 2026)* candlestick (yfinance `DX-Y.NYB`). No volume pane — DXY is an index, not tradable. Same partial-bar drop logic as VIX/Nasdaq (`_load_us_index_data` excludes the in-progress US trading-day row when fetched during NYSE hours).
+8. **Breadth detail tables** — current SMA-N readings + day/week deltas, and a composite gauge with a Vietnamese-language verdict ("THẬN TRỌNG" / "TÍCH CỰC" / etc.).
+9. **🚀 Pre-breakout panel** — two-layer scanner over the unified RS universe (`rs_fixed_tickers.csv`, ~230 names), gated on the composite RS Rating from the matrix:
    - **Layer A**: `rs_rating ≥ 90` AND `price ≤ 95% of 252-d high` (in base).
    - **Layer B**: `rs_rating ≥ 90` AND BB(20, 2σ) width in bottom 20% of trailing 126-session distribution (squeeze).
    - Watch lists relax to `rs_rating ≥ 80`.
    - Highlighted "⭐ Both" block at the top when a ticker passes both layers.
    - See [`docs/RS_AND_PREBREAKOUT.md`](docs/RS_AND_PREBREAKOUT.md) for the rs_rating formula.
-8. **Relative Strength Heatmap (Institutional 3T)** — composite RS Rating (1–99) per ticker per session, last 20 sessions × ~230 tickers. Composite blend = **30% RS + 70% momentum** (changed from 50/50 in May 2026).
-9. **Relative Strength Heatmap — Crypto** *(new — May 2026)* — top-50 cryptos vs BTC, same composite formula, displayed below the VN heatmap. Closed-candle convention: rightmost column is always the UTC daily bar that closed at 07:00 ICT today, never an in-progress partial. See [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md).
+10. **Relative Strength Heatmap (Institutional 3T)** — composite RS Rating (1–99) per ticker per session, last 20 sessions × ~230 tickers. Composite blend = **30% RS + 70% momentum** (changed from 50/50 in May 2026). During VN trading hours an extra leftmost column tagged `HH:MM` is prepended client-side with each ticker's intraday RS; the column auto-removes when the 15:15 ICT EOD pipeline catches up and today's settled date becomes the leftmost EOD column. See [`docs/INTRADAY_RS.md`](docs/INTRADAY_RS.md).
+11. **Relative Strength Heatmap — Crypto** — top-50 cryptos vs BTC, same composite formula, displayed below the VN heatmap. Closed-candle convention: rightmost column is always the UTC daily bar that closed at 07:00 ICT today, never an in-progress partial. Binance klines primary, yfinance fallback for KAS-USD. See [`docs/CRYPTO_RS_HEATMAP.md`](docs/CRYPTO_RS_HEATMAP.md).
 
 ---
 

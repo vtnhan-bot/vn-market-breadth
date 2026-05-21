@@ -46,6 +46,12 @@ Cloud Scheduler ─ */15 9-14 * * 1-5 ICT ─▶ Cloud Run Job (intraday-breadth
 Browser  ──▶ fetch intraday_breadth.json every 60s ──▶ Plotly.react()
 ```
 
+## Sibling: intraday RS update
+
+At the end of every successful intraday breadth tick, `intraday_breadth.py:main()` also calls `intraday_rs_3T.run_intraday_rs(now_ict, combined_local)`. That step publishes a separate `gs://vn-market-breadth/intraday_rs_3T.json` and the dashboard JS uses it to prepend a `HH:MM` column to the RS heatmap. Failure of the RS step is non-fatal — the breadth tick still publishes.
+
+See [`INTRADAY_RS.md`](INTRADAY_RS.md) for the full RS contract.
+
 ## JSON schema (`gs://vn-market-breadth/intraday_breadth.json`)
 
 ```jsonc
