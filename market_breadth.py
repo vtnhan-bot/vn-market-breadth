@@ -23,6 +23,8 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
 
+from vnindex_ex_vin import compute_vnindex_ex_vin
+
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 EXCEL_PATH = r"C:\Users\DELL\Desktop\vietnam_top100_marketcap_hose_hnx_best_effort.xlsx"
 SCRIPT_DIR = Path(__file__).parent
@@ -941,6 +943,7 @@ def build_html(
     us_nasdaq_df=None,
     us_dxy_df=None,
     rs_crypto_payload=None,
+    vnindex_ex_vin_df=None,
 ):
     dates = [d.strftime("%d-%m-%Y") for d in breadth.index]
 
@@ -995,6 +998,50 @@ def build_html(
         }
         vni_chart_data = json.dumps([candle])
         vni_vol_data   = json.dumps([vol_bar])
+
+    # VN-Index vs VN-Index ex-Vingroup (VIC/VHM/VRE) chart data (50 sessions)
+    ex_vin_chart_data = "null"
+    ex_vin_subtitle = ""
+    if vnindex_ex_vin_df is not None and not vnindex_ex_vin_df.empty:
+        ex = vnindex_ex_vin_df.copy()
+        ex["time"] = pd.to_datetime(ex["time"])
+        ex_dates = [d.strftime("%d-%m-%Y") for d in ex["time"]]
+        # Multiply by 1000 to render in real points (combined_dataset stores
+        # VNINDEX in thousand-points, e.g. 1.90 = 1,900).
+        vni_pts = (ex["vnindex"].astype(float) * 1000.0).round(2).tolist()
+        exv_pts = (ex["ex_vin_index"].astype(float) * 1000.0).round(2).tolist()
+        ex_vin_chart_data = json.dumps([
+            {
+                "x": ex_dates,
+                "y": vni_pts,
+                "name": "VN-Index",
+                "mode": "lines",
+                "line": {"color": "#1565C0", "width": 2.5},
+                "hovertemplate": "VN-Index: %{y:,.2f}<extra></extra>",
+            },
+            {
+                "x": ex_dates,
+                "y": exv_pts,
+                "name": "VN-Index loại VIC/VHM/VRE",
+                "mode": "lines",
+                "line": {"color": "#E67E22", "width": 2.5},
+                "hovertemplate": "Ex-Vin: %{y:,.2f}<extra></extra>",
+            },
+        ])
+        # Subtitle: today's Vin-trio weight + cumulative spread over the window
+        base_vni = float(ex["vnindex"].iloc[0])
+        base_exv = float(ex["ex_vin_index"].iloc[0])
+        last_vni = float(ex["vnindex"].iloc[-1])
+        last_exv = float(ex["ex_vin_index"].iloc[-1])
+        last_vin_share = float(ex["vin_share_pct"].iloc[-1])
+        vni_ret = (last_vni / base_vni - 1.0) * 100.0
+        exv_ret = (last_exv / base_exv - 1.0) * 100.0
+        spread_pp = exv_ret - vni_ret
+        ex_vin_subtitle = (
+            f"VIC/VHM/VRE chiếm {last_vin_share:.1f}% vốn hóa HOSE — "
+            f"VN-Index 50 phiên {vni_ret:+.2f}% vs ex-Vin {exv_ret:+.2f}% "
+            f"(chênh lệch {spread_pp:+.2f} pp)"
+        )
 
     # CBOE VIX volatility index chart data (100 sessions)
     vix_chart_data = "null"
@@ -1104,6 +1151,12 @@ def build_html(
         vni_latest_label = (
             f'<div class="data-as-of">Dữ liệu mới nhất: '
             f'{_fmt_latest(pd.to_datetime(vnindex_df["time"]).max())} (EOD)</div>'
+        )
+    ex_vin_latest_label = ""
+    if vnindex_ex_vin_df is not None and not vnindex_ex_vin_df.empty:
+        ex_vin_latest_label = (
+            f'<div class="data-as-of">Dữ liệu mới nhất: '
+            f'{_fmt_latest(pd.to_datetime(vnindex_ex_vin_df["time"]).max())} (EOD)</div>'
         )
     vix_latest_label = ""
     if us_vix_df is not None and not us_vix_df.empty:
@@ -1667,6 +1720,10 @@ def build_html(
   <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
   {vni_latest_label}
 
+  <div id="vnindex-ex-vin-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
+  <div style="font-size:0.78rem;color:#666;margin:-6px 4px 4px 4px;font-style:italic">{ex_vin_subtitle}</div>
+  {ex_vin_latest_label}
+
   <div id="vix-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
   {vix_latest_label}
 
@@ -1804,6 +1861,34 @@ if (vniData && vniVol) {{
     height: 624,
   }};
   Plotly.newPlot('vnindex-chart', [...vniData, ...vniVol], vniLayout, config);
+}}
+
+// VN-Index vs VN-Index ex-Vingroup (50 sessions)
+const exVinData = {ex_vin_chart_data};
+if (exVinData) {{
+  const exVinLayout = {{
+    title: {{ text: 'VN-Index vs VN-Index loại VIC/VHM/VRE - 50 phiên', font: {{ color: '#c0392b', size: 17 }} }},
+    paper_bgcolor: '#fff8f0',
+    plot_bgcolor: '#fff8f0',
+    xaxis: {{
+      type: 'category',
+      tickangle: -45,
+      tickfont: {{ size: 10 }},
+      gridcolor: '#ead8c0',
+    }},
+    yaxis: {{
+      title: 'Điểm',
+      gridcolor: '#ead8c0',
+    }},
+    legend: {{ orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center' }},
+    hovermode: 'x unified',
+    margin: {{ l: 60, r: 60, t: 60, b: 80 }},
+    height: 420,
+  }};
+  Plotly.newPlot('vnindex-ex-vin-chart', exVinData, exVinLayout, config);
+}} else {{
+  const exVinEl = document.getElementById('vnindex-ex-vin-chart');
+  if (exVinEl) {{ exVinEl.style.display = 'none'; }}
 }}
 
 // VIX chart
@@ -2315,6 +2400,25 @@ def main():
         else:
             log(f"DXY rows loaded: {len(us_dxy_df)}")
 
+        # VN-Index ex-Vingroup (VIC/VHM/VRE) — Paasche-style mcap reconstruction.
+        vnindex_ex_vin_df = None
+        if vnindex_df is not None and not vnindex_df.empty and len(breadth.index):
+            try:
+                vnindex_ex_vin_df = compute_vnindex_ex_vin(
+                    vnindex_df, combined_df, breadth.index[0], SESSIONS_SHOW
+                )
+                if vnindex_ex_vin_df.empty:
+                    log("WARNING: VN-Index ex-Vin reconstruction returned empty — chart hidden.")
+                else:
+                    last_share = float(vnindex_ex_vin_df["vin_share_pct"].iloc[-1])
+                    log(
+                        f"VN-Index ex-Vin built: {len(vnindex_ex_vin_df)} sessions, "
+                        f"Vin trio = {last_share:.2f}% of HOSE on latest session."
+                    )
+            except Exception as exc:
+                log(f"WARNING: VN-Index ex-Vin reconstruction failed ({exc}) — chart hidden.")
+                vnindex_ex_vin_df = None
+
         log("Building HTML ...")
         html = build_html(
             breadth,
@@ -2329,6 +2433,7 @@ def main():
             us_nasdaq_df,
             us_dxy_df=us_dxy_df,
             rs_crypto_payload=rs_crypto_payload,
+            vnindex_ex_vin_df=vnindex_ex_vin_df,
         )
         with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
             f.write(html)
