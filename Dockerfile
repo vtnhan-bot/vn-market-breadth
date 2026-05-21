@@ -28,6 +28,7 @@ COPY run_daily_update.py \
      _patch_us_charts.py \
      intraday_breadth.py \
      intraday_rs_3T.py \
+     vnindex_ex_vin.py \
      ./
 
 # Bootstrap input CSVs (read by the pipeline scripts on day 1)
