@@ -188,6 +188,80 @@ gcloud functions deploy telegram-budget-alert \
 
 Same for `TELEGRAM_CHAT_ID` if you want alerts to a different chat/group.
 
+## Cost optimization (May 2026 baseline)
+
+### May 2026 bill: ~62,000 VND
+
+First materially non-zero month since the budget went in. Resource inventory pulled at month end (2026-06-01):
+
+| Resource | Usage in May | Free tier | Estimated VND |
+|---|---|---|---|
+| Cloud Run jobs total runtime | 914 min (550 executions across 3 jobs, ~110K vCPU-sec / 110K GiB-sec) | 240K vCPU-sec, 450K GiB-sec | ~0 |
+| Cloud Build | 88 builds × ~1.5 min = 135 build-min | 120 build-min / day | ~0 |
+| **Artifact Registry storage** | **7.55 GB across 49 image versions** (one per push) | 0.5 GB | **~18,500** (biggest visible item) |
+| Cloud Logging ingest | ~198K entries / ~180 MB | 50 GB | ~0 |
+| GCS storage + egress | 10.4 MiB bucket; egress well under 100 GB | 100 GB | ~0 |
+| Cloud Functions, Pub/Sub, Eventarc, Scheduler | trivial volumes | covered | ~0 |
+| **Total estimated** | | | **~18,500** |
+
+The ~43,500 VND gap between estimate and invoice is likely Cloud Audit Logs above the 50 GB band or cross-region egress on image pushes — visible only with BigQuery billing export enabled.
+
+### Artifact Registry cleanup policy (applied 2026-06-01)
+
+Two rules on `asia-southeast1-docker.pkg.dev/.../market-repo`:
+
+```yaml
+keep-last-5:           # KEEP — protects the 5 newest versions unconditionally
+  mostRecentVersions:
+    keepCount: 5
+delete-older-than-7d:  # DELETE — removes anything not protected by KEEP, older than 7 days
+  condition:
+    olderThan: 604800s
+```
+
+Inspect / replace:
+
+```bash
+gcloud artifacts repositories describe market-repo \
+  --location=asia-southeast1 --project=project-feb6df0e-9749-4925-b4e
+
+gcloud artifacts repositories set-cleanup-policies market-repo \
+  --location=asia-southeast1 --project=project-feb6df0e-9749-4925-b4e \
+  --policy=path/to/policy.json
+```
+
+**Why `keepCount=5`**: KEEP rules always trump DELETE, so the 5 newest versions are protected regardless of age. That gives a 4–5 day rollback window (Cloud Run pins the digest of `:latest` at update-time, so we can roll back to "the digest from 3 pushes ago" without rebuilding from source). Going below 3 would risk a race where GH-Actions hasn't re-pinned yet but the policy already deleted the digest a running job needs.
+
+**Expected impact**: storage drops from 7.55 GB → ~450 MB on the policy's next scheduled run (within ~24h). AR line item goes to **0 VND** next month.
+
+### Manual prune did not free space
+
+While applying the policy, an attempt at a one-time manual delete (84 individual deletes) failed to actually free storage despite all initiating successfully. Root cause is the `--async` polling gotcha documented in [OPERATIONS.md](OPERATIONS.md): the sync delete needs `artifactregistry.operations.get` to confirm completion, and the IAM check in that path fails intermittently even for `roles/owner`. Async fires the delete but doesn't confirm, and AR's eventual consistency held the listing at 47 versions for the verification window.
+
+Policy-driven cleanup is the reliable path; the one-time prune was only meant to short-circuit Google's scheduled cleanup by ~24h and isn't worth more effort.
+
+### What to verify after the policy runs
+
+Roughly 24h after policy application:
+
+```bash
+# Should drop to ~5 versions and ~450 MB
+gcloud artifacts repositories describe market-repo \
+  --location=asia-southeast1 --project=project-feb6df0e-9749-4925-b4e | grep "Repository Size"
+
+gcloud artifacts docker images list \
+  asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth \
+  --include-tags --sort-by="~UPDATE_TIME" --format="value(version)" | wc -l
+```
+
+If size is still ~7.5 GB after 48h: the policy didn't run. Re-check `cleanupPolicies` is still in the repo describe output, and consider re-applying. If size dropped but is still above 0.5 GB: a recent flurry of pushes left more than 5 within the 7-day window — expected.
+
+### Other tunable levers (not applied)
+
+- **Cloud Logging retention** drop 30 → 7 days saves ~1–3K VND but loses audit-log forensics > 1 week old. Apply with `gcloud logging buckets update _Default --location=global --retention-days=7 --project=...`.
+- **`us-market-breadth-cron` scheduler** — 28 runs × 7.7 min, all inside Cloud Run free tier (~0 VND saved). Disable only if the panel is unused: `gcloud scheduler jobs pause us-market-breadth-cron --location=asia-southeast1 --project=...`.
+- **Intraday cron** from `*/15` → `*/30` halves intraday refreshes but yields ~0 VND (already in free tier) and degrades the [INTRADAY_RS.md](INTRADAY_RS.md) feature.
+
 ## Don't do
 
 - **Don't lower the budget below realistic monthly spend.** The killswitch will fire daily.

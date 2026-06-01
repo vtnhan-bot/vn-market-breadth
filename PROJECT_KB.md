@@ -2,7 +2,7 @@
 
 > **Purpose**: a single document that lets a senior engineer (or a future Claude session) get from cold-start to confidently shipping changes in under 30 minutes. Read this first; it points you at everything else.
 >
-> **Last refresh**: 2026-05-22 (after the May 17–22 shipment: DXY 150-session chart below Nasdaq; intraday RS heatmap with HH:MM-tagged leftmost column + EOD-catch-up guard; VN-Index ex-Vingroup line chart below the VN-Index candlestick).
+> **Last refresh**: 2026-06-01 (after May 17–22 shipment: DXY 150-session chart, intraday RS heatmap with HH:MM column + EOD-catch-up guard, VN-Index ex-Vingroup line chart; plus the May 2026 cost analysis — May bill ~62K VND, Artifact Registry cleanup policy keep-last-5 + delete-older-than-7d applied 2026-06-01, AR storage drop expected within ~24h).
 >
 > **Topic deep-dives** in [`docs/`](docs/):
 > - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling, Đóng cửa rollover, intraday-RS sibling hook).

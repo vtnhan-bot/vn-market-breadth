@@ -201,6 +201,22 @@ gcloud run jobs update market-breadth-job --region=asia-southeast1 \
   --image=asia-southeast1-docker.pkg.dev/project-feb6df0e-9749-4925-b4e/market-repo/market-breadth:latest
 ```
 
+### Artifact Registry manual deletes need `--async`
+
+`gcloud artifacts docker images delete <repo>@<digest>` (sync mode) starts the delete via a long-running operation, then polls `operations.get` to confirm completion. The polling step intermittently returns:
+
+```
+PERMISSION_DENIED: Permission denied on operation projects/.../operations/<UUID> (or it may not exist).
+```
+
+even when the calling account has `roles/owner`. Workaround: add `--async --quiet` to fire-and-forget. Eventual consistency takes a few minutes per delete to actually reduce the listing.
+
+```bash
+gcloud artifacts docker images delete <repo>@sha256:... --delete-tags --async --quiet --project=...
+```
+
+This is why the manual one-time AR prune (May 2026) didn't immediately free space — see [COST_PROTECTION.md](COST_PROTECTION.md). The cleanup policy is the reliable path for ongoing maintenance; the manual prune is only a way to short-circuit by ~24h.
+
 ### `eod_batch_downloader.py` does NOT drop today's partial bar
 
 If you trigger `market-breadth-job` manually *during* VN trading hours (09:00–14:45 ICT) on a weekday, vnstock returns an in-progress row with today's date and `close = current intraday price`. That row leaks into `combined_dataset.csv` and the RS / breadth heatmaps render an `18-05`-style column that's actually an intraday snapshot, not a settled close. The 15:15 ICT scheduled run fixes this automatically (it fetches *after* the 14:45 close, so the bar is settled).
