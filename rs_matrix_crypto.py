@@ -252,15 +252,19 @@ def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
 
 
 def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) -> float:
-    """Weighted 10/20/60-session momentum, expressed as pct above/below 1.0."""
+    """Weighted 5/10/20-session momentum, expressed as pct above/below 1.0.
+
+    Mirrors rs_matrix_3T.calculate_weighted_momentum_score — shortened from
+    10/20/60 to 5/10/20 so the heatmap tilts toward recent action.
+    """
     df = history_df[history_df["time"] <= session_date].sort_values("time")
-    if len(df) < 61:
+    if len(df) < 21:
         return np.nan
     current_close = pd.to_numeric(df.iloc[-1]["close"], errors="coerce")
     if pd.isna(current_close) or current_close <= 0:
         return np.nan
     weighted_ratio = 0.0
-    for lookback, weight in ((10, 0.50), (20, 0.30), (60, 0.20)):
+    for lookback, weight in ((5, 0.50), (10, 0.30), (20, 0.20)):
         base_close = pd.to_numeric(df.iloc[-(lookback + 1)]["close"], errors="coerce")
         if pd.isna(base_close) or base_close <= 0:
             return np.nan

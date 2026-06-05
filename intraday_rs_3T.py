@@ -123,15 +123,17 @@ def _compute_return_90d(history: pd.DataFrame, intraday_price: float, today: "da
 
 
 def _compute_weighted_momentum(history: pd.DataFrame, intraday_price: float) -> float:
-    """Weighted 10/20/60-session momentum vs intraday price. Matches
+    """Weighted 5/10/20-session momentum vs intraday price. Matches
     rs_matrix_3T.calculate_weighted_momentum_score with intraday_price
-    substituted as 'current_close'."""
+    substituted as 'current_close'. Shortened from 10/20/60 to 5/10/20 so
+    the intraday HH:MM column reflects recent action more aggressively.
+    """
     if intraday_price is None or pd.isna(intraday_price) or intraday_price <= 0:
         return np.nan
-    if len(history) < 60:
+    if len(history) < 20:
         return np.nan
     weighted_ratio = 0.0
-    for lookback, weight in ((10, 0.50), (20, 0.30), (60, 0.20)):
+    for lookback, weight in ((5, 0.50), (10, 0.30), (20, 0.20)):
         if len(history) < lookback:
             return np.nan
         base_close = pd.to_numeric(history.iloc[-lookback]["close"], errors="coerce")

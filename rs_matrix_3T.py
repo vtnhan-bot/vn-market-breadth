@@ -109,9 +109,15 @@ def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
 
 
 def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) -> float:
-    """Weighted 10/20/60-session momentum, shown as pct above or below 1.0."""
+    """Weighted 5/10/20-session momentum, shown as pct above or below 1.0.
+
+    Shortened from 10/20/60 to 5/10/20 (commit on 2026-06-XX) so the heatmap
+    weights recent price action more heavily. Mean-weighted lookback drops
+    from ~21 sessions to ~9.5 sessions. Same 50/30/20 weighting shape; only
+    the windows changed.
+    """
     history_df = history_df[history_df["time"] <= session_date].sort_values("time")
-    if len(history_df) < 61:
+    if len(history_df) < 21:
         return np.nan
 
     current_close = pd.to_numeric(history_df.iloc[-1]["close"], errors="coerce")
@@ -119,7 +125,7 @@ def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) ->
         return np.nan
 
     weighted_ratio = 0.0
-    for lookback, weight in ((10, 0.50), (20, 0.30), (60, 0.20)):
+    for lookback, weight in ((5, 0.50), (10, 0.30), (20, 0.20)):
         base_close = pd.to_numeric(history_df.iloc[-(lookback + 1)]["close"], errors="coerce")
         if pd.isna(base_close) or base_close <= 0:
             return np.nan
