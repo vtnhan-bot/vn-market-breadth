@@ -43,7 +43,7 @@ Cloud Scheduler ─ */15 9-14 * * 1-5 ICT ─▶ Cloud Run Job (intraday-breadth
                                               ├── Pull gs://vn-market-breadth/intraday/combined_dataset.csv
                                               ├── Build top-100 EOD prices frame, drop today's row if present
                                               ├── Compute 49-day EOD breadth series + 1 intraday tick
-                                              ├── Trading.price_board() — single batch call, ~2s for 100 tickers
+                                              ├── ssi_client.get_current_prices() — ~1 SSI intraday_ohlc call/ticker @ ~1 req/s, ~120s for 100 tickers
                                               └── Write gs://vn-market-breadth/intraday_breadth.json (cache-busted)
 
 Browser  ──▶ fetch intraday_breadth.json every 60s ──▶ Plotly.react()
@@ -111,8 +111,10 @@ Conflict avoidance: the EOD writer only fires once per day at/after 15:15 ICT (a
 
 | Resource | Config |
 |---|---|
-| Cloud Run Job | `intraday-breadth-job`, region `asia-southeast1`, image `:latest`, command override `python3 intraday_breadth.py`, cpu=1, mem=512Mi, timeout=120s, max-retries=1 |
-| Env vars | `GITHUB_ACTIONS=true`, `VNSTOCK_API_KEY` from Secret Manager `vnstock-api-key:latest` |
+| Cloud Run Job | `intraday-breadth-job`, region `asia-southeast1`, image `:latest`, command override `python3 intraday_breadth.py`, cpu=1, mem=512Mi, timeout=600s, max-retries=1 |
+| Env vars | `GITHUB_ACTIONS=true`; `SSI_FC_DATA_CONSUMER_ID` + `SSI_FC_DATA_CONSUMER_SECRET` from Secret Manager (current-price source, see below); `VNSTOCK_API_KEY` from `vnstock-api-key:latest` (legacy — no longer used by intraday breadth) |
+
+> **Timeout note (2026-06-22):** raised 120s → 600s when the current-price source moved off vnstock onto SSI FastConnect. SSI has no batch price-board, so `fetch_current_prices()` (in `ssi_client.py`) makes ~one `intraday_ohlc` REST call per ticker, rate-limited to SSI's ~1 req/sec → a full 100-ticker sweep runs ~120s and was hitting the old 120s wall. vnstock's `Trading.price_board()` started returning HTTP 403 from the cloud on 2026-06-22; SSI is reachable from GCP (the VN trading-signal engine uses it).
 | Cloud Scheduler | `intraday-breadth-schedule`, cron `*/15 9-14 * * 1-5`, time-zone `Asia/Ho_Chi_Minh`, OAuth via `github-deploy@…` |
 
 The job auto-refreshes its `:latest` digest after every Cloud Build via the GHA workflow's "Update intraday Cloud Run Job image" step.

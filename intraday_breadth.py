@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Intraday breadth snapshot — runs every 15 min during VN trading hours.
 
-Fetches current prices for top-100 tickers via vnstock Trading.price_board(),
+Fetches current prices for top-100 tickers via SSI FastConnect (ssi_client),
 computes % above SMA-3/5/10/20/50/200 using yesterday's combined_dataset.csv
 (restored from GCS) for SMA history, appends today's tick to
 intraday_breadth.json on GCS.
@@ -92,23 +92,19 @@ def read_top100_tickers() -> list[str]:
 
 
 def fetch_current_prices(tickers: list[str]) -> dict[str, float]:
-    """Single batch call via Trading.price_board(). Returns ticker -> price (in 'thousand VND')."""
-    from vnstock import Trading
-    trading = Trading(source="VCI")
-    board = trading.price_board(tickers)
-    if board is None or board.empty:
-        raise RuntimeError("Trading.price_board() returned no rows")
+    """Current price per ticker via SSI FastConnect (last 1m intraday_ohlc bar
+    close). Returns {TICKER_UPPER: price in 'thousand VND'}.
 
-    symbols = board[("listing", "symbol")].astype(str).str.upper().str.strip()
-    match_prices = pd.to_numeric(board[("match", "match_price")], errors="coerce")
-    ref_prices = pd.to_numeric(board[("listing", "ref_price")], errors="coerce")
-
-    out: dict[str, float] = {}
-    for symbol, match, ref in zip(symbols, match_prices, ref_prices):
-        # Use match_price if active; fall back to ref_price (yesterday's reference) if no trades yet
-        price = match if pd.notna(match) and match > 0 else ref
-        if pd.notna(price) and price > 0:
-            out[symbol] = float(price) / PRICE_DIVISOR
+    Replaces the old vnstock Trading.price_board() path (started 403'ing). SSI
+    has no batch price board, so this makes ~one REST call per ticker, rate-
+    limited to SSI's ~1 req/sec inside ssi_client. Same contract as before:
+    UPPER-cased keys, prices already divided by 1000 (PRICE_DIVISOR applied in
+    ssi_client). Symbols with no bar yet (pre-open/halted) are skipped there.
+    """
+    from ssi_client import get_current_prices
+    out = get_current_prices(tickers)
+    if not out:
+        raise RuntimeError("SSI price source returned no rows")
     return out
 
 
@@ -332,7 +328,7 @@ def main() -> int:
         TICKERS_FILE.name,
     )
 
-    LOGGER.info("Fetching current prices via Trading.price_board() ...")
+    LOGGER.info("Fetching current prices via SSI FastConnect ...")
     current = fetch_current_prices(top100)
     LOGGER.info("Got prices for %d/%d tickers", len(current), len(top100))
     if len(current) < TOP_N // 2:
