@@ -259,12 +259,64 @@ def save_ticker_to_cache(df: pd.DataFrame, cache_path: Path) -> None:
     df.to_csv(cache_path, index=False, encoding="utf-8-sig")
 
 
+def _fetch_ssi_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
+    """Fetch one ticker's daily OHLCV from SSI FastConnect.
+
+    SSI's `daily_ohlc` returns RAW VND, so OHLC prices are divided by 1000 to
+    match combined_dataset.csv's thousand-VND scale (volume stays raw shares).
+    Returns a frame in the same schema as `normalize_history_frame` (minus the
+    `source` column, which the caller sets), or None if SSI has no rows for the
+    symbol — e.g. VNINDEX (an index, not a security) is not served by SSI's
+    security `daily_ohlc` and falls back to vnstock.
+    """
+    import ssi_client
+
+    s = date.fromisoformat(start_date)
+    e = date.fromisoformat(end_date)
+    raw = ssi_client.get_daily_ohlcv(ticker, s, e)
+    if raw is None or raw.empty:
+        return None
+
+    out = pd.DataFrame({
+        "time": pd.to_datetime(raw["ts"]).dt.date,
+        "open": pd.to_numeric(raw["open"], errors="coerce") / 1000.0,
+        "high": pd.to_numeric(raw["high"], errors="coerce") / 1000.0,
+        "low": pd.to_numeric(raw["low"], errors="coerce") / 1000.0,
+        "close": pd.to_numeric(raw["close"], errors="coerce") / 1000.0,
+        "volume": pd.to_numeric(raw["volume"], errors="coerce"),
+    })
+    out = out.dropna(subset=["time", "close"])
+    out = out.sort_values("time").drop_duplicates("time", keep="last")
+    if out.empty:
+        return None
+    out["ticker"] = ticker
+    out["fetched_at"] = datetime.now().isoformat(timespec="seconds")
+    return out.reset_index(drop=True)
+
+
 def fetch_with_failover(
     ticker: str,
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
-    """Fetch a ticker from vnstock with internal source failover."""
+    """Fetch a ticker: SSI FastConnect primary, vnstock source failover fallback.
+
+    SSI replaced vnstock as the primary daily source on 2026-06-22 (vnstock's
+    live `price_board` began returning HTTP 403 from the cloud; `quote.history`
+    still works but is degrading). vnstock's `quote.history` is kept as a
+    fallback — it still works and, crucially, serves VNINDEX, which SSI's
+    security `daily_ohlc` endpoint does not return.
+    """
+    # --- SSI FastConnect first (self rate-limited inside ssi_client) ---------
+    try:
+        ssi_df = _fetch_ssi_daily(ticker, start_date, end_date)
+        if ssi_df is not None and not ssi_df.empty:
+            ssi_df["source"] = "SSI"
+            return ssi_df
+        LOGGER.info("%s: SSI returned no rows; falling back to vnstock", ticker)
+    except Exception as exc:
+        LOGGER.warning("%s: SSI daily fetch failed (%s); falling back to vnstock", ticker, exc)
+
     last_error: Exception | None = None
     rate_limited = False
 
@@ -413,6 +465,19 @@ def main() -> None:
     if not combined_df.empty:
         combined_df.to_csv(combined_path, index=False, encoding="utf-8-sig")
         LOGGER.info("Combined dataset saved to %s", combined_path)
+        # Scale + source sanity: SSI primary must land in the same thousand-VND
+        # scale as the vnstock fallback (FPT ~70.x, VNINDEX ~1.8x).
+        if "source" in combined_df.columns:
+            src_counts = combined_df.groupby("source")["ticker"].nunique().to_dict()
+            LOGGER.info("Source coverage (unique tickers per source): %s", src_counts)
+        for probe in ("FPT", "VNINDEX"):
+            sub = combined_df[combined_df["ticker"] == probe]
+            if not sub.empty:
+                last = sub.sort_values("time").iloc[-1]
+                LOGGER.info(
+                    "PROBE %s: last close=%.4f source=%s time=%s",
+                    probe, float(last["close"]), last.get("source", "?"), last["time"],
+                )
     else:
         LOGGER.error("No valid ticker data was collected.")
 
