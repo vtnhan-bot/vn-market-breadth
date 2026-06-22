@@ -4,8 +4,8 @@
 Called from intraday_breadth.py's main loop (every 15 min during VN trading
 hours). Reuses the EOD history that intraday_breadth already downloaded from
 gs://vn-market-breadth/intraday/combined_dataset.csv, augments each ticker
-with TODAY's intraday close (vnstock Trading.price_board), and produces a
-fresh RS Rating snapshot.
+with TODAY's intraday close (SSI FastConnect last 1m bar, via ssi_client),
+and produces a fresh RS Rating snapshot.
 
 Math note: we deliberately skip computing VNINDEX's 90-day return. In the
 EOD pipeline, relative_performance = stock_return_90d - index_return_90d
@@ -50,7 +50,6 @@ GCS_BUCKET = os.environ.get("INTRADAY_GCS_BUCKET", "vn-market-breadth")
 GCS_INTRADAY_RS_KEY = "intraday_rs_3T.json"
 
 RS_LOOKBACK_CALENDAR_DAYS = 90  # match rs_matrix_3T.py
-PRICE_DIVISOR = 1000.0           # vnstock raw VND -> combined_dataset's thousand VND
 
 LOGGER = logging.getLogger("intraday_rs_3T")
 
@@ -78,30 +77,37 @@ def _load_history_frame(combined_path: Path, tickers: list[str]) -> pd.DataFrame
     return df[["ticker", "time", "close"]].sort_values(["ticker", "time"]).reset_index(drop=True)
 
 
-def _fetch_intraday_prices(tickers: list[str]) -> dict[str, dict[str, float]]:
-    """Single batch Trading.price_board() call. Returns ticker -> dict with
-    match_price (intraday in 'thousand VND') and ref_price (yesterday's close
-    reference, for daily_change_pct).
+def _fetch_intraday_prices(tickers: list[str]) -> dict[str, float]:
+    """Current intraday price per ticker via SSI FastConnect (thousand VND).
+
+    Replaces the old vnstock `Trading.price_board()` path (started 403'ing
+    2026-06-22). SSI has no batch price board, so this makes ~one REST call per
+    ticker, rate-limited inside ssi_client (~1 req/s). Returns the SAME
+    'thousand VND' scale as before — {TICKER_UPPER: price} — since ssi_client
+    applies the /1000 divisor. price_board's `ref_price` is no longer available
+    here; daily_change_pct now derives its reference from the prior-session EOD
+    close in combined_dataset (see `_ref_close_from_history`).
     """
-    from vnstock import Trading
-    trading = Trading(source="VCI")
-    board = trading.price_board(tickers)
-    if board is None or board.empty:
-        raise RuntimeError("Trading.price_board() returned no rows for RS universe")
+    from ssi_client import get_current_prices
+    return get_current_prices(tickers)
 
-    symbols = board[("listing", "symbol")].astype(str).str.upper().str.strip()
-    match_px = pd.to_numeric(board[("match", "match_price")], errors="coerce")
-    ref_px = pd.to_numeric(board[("listing", "ref_price")], errors="coerce")
 
-    out: dict[str, dict[str, float]] = {}
-    for sym, m, r in zip(symbols, match_px, ref_px):
-        price = m if pd.notna(m) and m > 0 else r
-        if pd.notna(price) and price > 0:
-            out[sym] = {
-                "intraday_price": float(price) / PRICE_DIVISOR,
-                "ref_price": float(r) / PRICE_DIVISOR if pd.notna(r) and r > 0 else float("nan"),
-            }
-    return out
+def _ref_close_from_history(history: pd.DataFrame, today: "datetime.date") -> float:
+    """Prior-session reference close for daily_change_pct.
+
+    SSI provides no ref_price, so use the most recent EOD close strictly before
+    `today` from combined_dataset (the prior trading session's close). Returns
+    NaN if there's no prior bar. Uses `< today` (not `<=`) so that if the EOD
+    pipeline has already appended today's partial bar, we still reference the
+    prior session — matching price_board's ref_price semantics.
+    """
+    if history is None or history.empty:
+        return float("nan")
+    prior = history[history["time"] < today]
+    if prior.empty:
+        return float("nan")
+    base = pd.to_numeric(prior.iloc[-1]["close"], errors="coerce")
+    return float(base) if pd.notna(base) and base > 0 else float("nan")
 
 
 def _compute_return_90d(history: pd.DataFrame, intraday_price: float, today: "datetime.date") -> float:
@@ -174,11 +180,10 @@ def compute_intraday_rs(combined_path: Path, now_ict: datetime) -> dict | None:
         hist = history_by_ticker.get(ticker)
         if hist is None or hist.empty:
             continue
-        pinfo = prices.get(ticker)
-        if pinfo is None:
+        intraday_px = prices.get(ticker)
+        if intraday_px is None or pd.isna(intraday_px) or intraday_px <= 0:
             continue
-        intraday_px = pinfo["intraday_price"]
-        ref_px = pinfo["ref_price"]
+        ref_px = _ref_close_from_history(hist, today)
 
         stock_ret_90d = _compute_return_90d(hist, intraday_px, today)
         wm_score = _compute_weighted_momentum(hist, intraday_px)
