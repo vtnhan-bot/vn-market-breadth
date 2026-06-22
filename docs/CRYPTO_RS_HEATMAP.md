@@ -1,10 +1,14 @@
 # Crypto RS Heatmap
 
+> **⚠ GCP note (updated 2026-06-21):** Crypto market data now uses **KuCoin**, NOT Binance. The current crypto fetch path (`rs_matrix_crypto.py`) resolves to KuCoin; the dated "May 2026" Binance history below is kept as a changelog record only and is no longer the live source.
+> This engine's scheduled jobs run as Cloud Run jobs triggered by **VM systemd timers** (`engine-*.timer` on the pattern-engine VM), **NOT Cloud Scheduler**.
+> Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
+
 A second Relative Strength heatmap below the VN heatmap, covering a pinned top-50 crypto universe rated against BTC.
 
 ## At a glance
 
-- **Universe**: 50 coins pinned in `crypto_universe.csv` (Yahoo-style symbols like `BTC-USD`, `ETH-USD`; mapped to Binance USDT pairs at fetch time).
+- **Universe**: 50 coins pinned in `crypto_universe.csv` (Yahoo-style symbols like `BTC-USD`, `ETH-USD`; mapped to KuCoin USDT pairs at fetch time).
 - **Benchmark**: BTC. Excluded from the rated cohort (it's the denominator).
 - **Composite formula**: same 30% RS + 70% momentum blend as the VN heatmap (`rs_matrix_3T.py`). Ratings on the same 1–99 scale, so a `90` means the same thing on both panels.
 - **Pipeline stage**: stage 4 of `run_daily_update.py` (between `RS 3T` and `Breadth`).

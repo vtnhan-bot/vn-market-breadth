@@ -1,5 +1,8 @@
 # Intraday Market Breadth Chart
 
+> **⚠ GCP note (updated 2026-06-21):** The `intraday-breadth-job` Cloud Run job is triggered by a **VM systemd timer** (`engine-intraday-breadth.timer` on the pattern-engine VM), **NOT Cloud Scheduler**. The "Cloud Scheduler → Cloud Run Job" pipeline diagram and the Cloud Scheduler row in the infra table below describe deleted infrastructure; the cron expression still reflects the actual cadence but the trigger is now a systemd timer.
+> Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
+
 A live breadth chart that updates every 15 minutes during VN trading hours, displayed below the EOD breadth chart on the main dashboard.
 
 ## What you see on the chart

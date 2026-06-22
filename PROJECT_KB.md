@@ -1,5 +1,11 @@
 # VN Market Breadth Dashboard — Project Knowledge Base
 
+> **⚠ GCP note (updated 2026-06-21):** This doc is partly stale. Current reality for this engine:
+> - The `market-breadth-job` and `intraday-breadth-job` Cloud Run jobs are triggered by **VM systemd timers** (`engine-market-breadth.timer` / `engine-intraday-breadth.timer` on the pattern-engine VM), **NOT Cloud Scheduler**. Any "Cloud Scheduler" trigger, the "Cloud Scheduler → Cloud Run Job" arch diagram, and the "Did Cloud Scheduler fire?" debug step below describe deleted infrastructure.
+> - Crypto market data uses **KuCoin**, NOT Binance. Ignore "crypto via Binance" references below.
+> - **Do NOT run the Cloud Scheduler steps below — they would recreate deleted jobs and incur cost.**
+> - Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
+
 > **Purpose**: a single document that lets a senior engineer (or a future Claude session) get from cold-start to confidently shipping changes in under 30 minutes. Read this first; it points you at everything else.
 >
 > **Last refresh**: 2026-06-01 (after May 17–22 shipment: DXY 150-session chart, intraday RS heatmap with HH:MM column + EOD-catch-up guard, VN-Index ex-Vingroup line chart; plus the May 2026 cost analysis — May bill ~62K VND, Artifact Registry cleanup policy keep-last-5 + delete-older-than-7d applied 2026-06-01, AR storage drop expected within ~24h).

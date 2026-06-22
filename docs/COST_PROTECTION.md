@@ -113,7 +113,7 @@ gcloud billing projects link project-feb6df0e-9749-4925-b4e \
   --billing-account=017EA5-270660-A8352F
 ```
 
-That's it — billing reattaches and Cloud Run / Cloud Build / Pub/Sub resume in minutes. The Cloud Scheduler jobs don't get disabled by an unlink, so the next scheduled run will pick up automatically.
+That's it — billing reattaches and Cloud Run / Cloud Build / Pub/Sub resume in minutes. This engine's scheduled runs are now driven by VM systemd timers (`engine-market-breadth.timer` / `engine-intraday-breadth.timer`) on the always-on pattern-engine VM, NOT Cloud Scheduler; the next timer fire picks up automatically.
 
 ## Verbs
 
@@ -259,7 +259,7 @@ If size is still ~7.5 GB after 48h: the policy didn't run. Re-check `cleanupPoli
 ### Other tunable levers (not applied)
 
 - **Cloud Logging retention** drop 30 → 7 days saves ~1–3K VND but loses audit-log forensics > 1 week old. Apply with `gcloud logging buckets update _Default --location=global --retention-days=7 --project=...`.
-- **`us-market-breadth-cron` scheduler** — 28 runs × 7.7 min, all inside Cloud Run free tier (~0 VND saved). Disable only if the panel is unused: `gcloud scheduler jobs pause us-market-breadth-cron --location=asia-southeast1 --project=...`.
+- ~~**`us-market-breadth-cron` scheduler**~~ — **DELETED 2026-06-21** (with `us-market-breadth-daily`). The us-market-breadth Cloud Run job is now triggered by the VM systemd timer `engine-us-market-breadth.timer` (16:30 + 17:30 ET); there is NO scheduler to pause — to change cadence edit the VM timer. Cloud Scheduler now holds only the one-time `gcp-stop-jul13`.
 - **Intraday cron** from `*/15` → `*/30` halves intraday refreshes but yields ~0 VND (already in free tier) and degrades the [INTRADAY_RS.md](INTRADAY_RS.md) feature.
 
 ## Don't do

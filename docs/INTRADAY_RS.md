@@ -1,5 +1,8 @@
 # Intraday Relative Strength Heatmap
 
+> **⚠ GCP note (updated 2026-06-21):** The `intraday-breadth-job` Cloud Run job (which hosts this intraday RS step) is triggered by a **VM systemd timer** (`engine-intraday-breadth.timer` on the pattern-engine VM), **NOT Cloud Scheduler / "Cloud Run cron"**. Crypto market data uses **KuCoin**, NOT Binance — ignore the "Binance klines" crypto-source reference below.
+> Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
+
 A live update to the VN RS heatmap that runs every 15 min during VN trading hours and prepends a `HH:MM`-tagged column to the leftmost position of the table with each ticker's current intraday RS rating. Settled EOD columns to the right of it are untouched.
 
 ## At a glance
