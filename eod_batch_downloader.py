@@ -399,7 +399,7 @@ def fetch_with_retry(
         save_ticker_to_cache(fetched_df, cache_path)
         source = fetched_df["source"].iloc[-1] if "source" in fetched_df.columns else "unknown"
         LOGGER.info(
-            "%s fetched via vnstock source %s and saved to %s",
+            "%s fetched via %s and saved to %s",
             ticker,
             source,
             cache_path.name,
