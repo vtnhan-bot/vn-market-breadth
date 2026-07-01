@@ -1,5 +1,8 @@
 # Intraday Relative Strength Heatmap
 
+> **⚠ GCP note (updated 2026-06-21):** The `intraday-breadth-job` Cloud Run job (which hosts this intraday RS step) is triggered by a **VM systemd timer** (`engine-intraday-breadth.timer` on the pattern-engine VM), **NOT Cloud Scheduler / "Cloud Run cron"**. Crypto market data uses **KuCoin**, NOT Binance — ignore the "Binance klines" crypto-source reference below.
+> Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
+
 A live update to the VN RS heatmap that runs every 15 min during VN trading hours and prepends a `HH:MM`-tagged column to the leftmost position of the table with each ticker's current intraday RS rating. Settled EOD columns to the right of it are untouched.
 
 ## At a glance
@@ -15,7 +18,7 @@ A live update to the VN RS heatmap that runs every 15 min during VN trading hour
 For each tick at time `t` during trading hours:
 
 1. **History**: load yesterday's settled `combined_dataset.csv` already on disk (intraday-breadth-job downloaded it from `gs://vn-market-breadth/intraday/`).
-2. **Current prices**: single `Trading.price_board()` batch call returns the 230 tickers' last match prices in raw VND. Divided by `PRICE_DIVISOR=1000.0` to match `combined_dataset.csv`'s thousand-VND scale.
+2. **Current prices**: `ssi_client.get_current_prices()` — ~one SSI FastConnect `intraday_ohlc` REST call per ticker (last 1m bar close), rate-limited ~1 req/s, returned in thousand-VND scale (ssi_client applies the /1000 divisor). Replaced `Trading.price_board()` on 2026-06-22 after vnstock began returning HTTP 403 from the cloud. SSI has no batch price-board, so this sweep is ~230 calls ≈ 4–5 min (the `intraday-breadth-job` task-timeout was raised to 720s to fit breadth + RS in one process).
 3. **Per ticker**: substitute today's intraday price as `current_close` and run the same `calculate_return_90d` and `calculate_weighted_momentum_score` math as `rs_matrix_3T.py`.
 4. **Cross-section rank**: rank `stock_return_90d` and `weighted_momentum_score` across the 230-ticker cohort. Blend 30/70. Clip to 1–99.
 
@@ -39,7 +42,7 @@ The settled EOD pipeline computes `relative_performance = stock_return_90d − i
 ```
 
 - `rs_rating` is `null` when there's insufficient history (rare — only for tickers with <61 sessions).
-- `daily_change_pct` = `(intraday_price / ref_price − 1) × 100`, where `ref_price` is yesterday's settled close from the same `price_board()` response.
+- `daily_change_pct` = `(intraday_price / ref_price − 1) × 100`. SSI provides no `ref_price`, so since 2026-06-22 `ref_price` is the prior-session EOD close from `combined_dataset.csv` (`_ref_close_from_history`: most recent close with `time < today`).
 
 ## Dashboard JS contract
 
@@ -95,16 +98,18 @@ Same image, same cron, same SA, same Pub/Sub — no new infrastructure for the R
 
 **Cache busting**: the JSON is written with `cache_control = no-cache, no-store, must-revalidate`. The JS appends `?_=${Date.now()}` on every fetch.
 
-**Yfinance vs Binance vs vnstock**: RS heatmap (VN) uses vnstock for intraday prices via `Trading.price_board()`. Crypto RS (separate file `intraday_rs_crypto.json` not implemented) would need its own source — Binance klines as in [CRYPTO_RS_HEATMAP.md](CRYPTO_RS_HEATMAP.md).
+**SSI vs Binance vs vnstock**: RS heatmap (VN) gets intraday prices from SSI FastConnect via `ssi_client.get_current_prices()` (was vnstock `Trading.price_board()` until it 403'd on 2026-06-22). Crypto RS (separate file `intraday_rs_crypto.json` not implemented) would need its own source — KuCoin klines as in [CRYPTO_RS_HEATMAP.md](CRYPTO_RS_HEATMAP.md).
 
 ## Smoke test
 
 ```bash
-# Local dry-run (uses an existing combined_dataset.csv, hits real vnstock, skips GCS upload)
+# Local dry-run (uses an existing combined_dataset.csv, hits real SSI, skips GCS upload)
+# Needs SSI creds in env: SSI_FC_DATA_CONSUMER_ID + SSI_FC_DATA_CONSUMER_SECRET (or ID / secret)
 INTRADAY_LOCAL_COMBINED=data/2026-05-22/combined_dataset.csv \
 INTRADAY_DRY_RUN=1 \
 .venv/Scripts/python.exe intraday_rs_3T.py
-# Logs: '230 tickers loaded', '230 prices fetched', 'DRY_RUN — would publish intraday RS with 230 rows at HH:MM'
+# Logs: 'RS history loaded: 230 tickers', 'SSI current prices: 229/230', 'DRY_RUN — would publish intraday RS with 229 rows at HH:MM'
+# (verified in-cloud 2026-06-22 via a one-off intraday-breadth-job run with args=intraday_rs_3T.py)
 ```
 
 ## Cross-refs

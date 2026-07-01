@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+# OHLC history now comes from SSI FastConnect first (see _fetch_ssi_daily), with
+# vnstock as the fallback. Listing (universe discovery) and Company (fundamentals
+# — outstanding_shares) stay on vnstock: SSI is a market-data feed with no
+# listing/fundamentals endpoint. NOTE: these vnstock-backed helpers are NOT on
+# the deployed EOD pipeline path (rs_matrix_3T/rs_universe_generator import only
+# constants + configure_logging from this module) — only rs_matrix_builder.py
+# (not in run_daily_update.py) calls them.
 from vnstock import Company, Listing, Vnstock
 
 
@@ -176,6 +183,38 @@ def append_latest_candle_to_cache(ticker: str, candle_df: pd.DataFrame) -> pd.Da
     return combined_df
 
 
+def _fetch_ssi_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
+    """Daily OHLCV from SSI FastConnect in this module's normalized schema.
+
+    SSI `daily_ohlc` returns RAW VND; OHLC is divided by 1000 to match the
+    thousand-VND scale of the vnstock fallback (volume stays raw shares).
+    Returns None when SSI has no rows (e.g. a delisted symbol), so the caller
+    falls back to vnstock.
+    """
+    import ssi_client
+
+    raw = ssi_client.get_daily_ohlcv(
+        ticker, date.fromisoformat(start_date), date.fromisoformat(end_date)
+    )
+    if raw is None or raw.empty:
+        return None
+    df = pd.DataFrame({
+        "time": pd.to_datetime(raw["ts"]).dt.date,
+        "open": pd.to_numeric(raw["open"], errors="coerce") / 1000.0,
+        "high": pd.to_numeric(raw["high"], errors="coerce") / 1000.0,
+        "low": pd.to_numeric(raw["low"], errors="coerce") / 1000.0,
+        "close": pd.to_numeric(raw["close"], errors="coerce") / 1000.0,
+        "volume": pd.to_numeric(raw["volume"], errors="coerce"),
+    })
+    df = df.dropna(subset=["time", "close"]).sort_values("time").drop_duplicates(
+        "time", keep="last"
+    )
+    if df.empty:
+        return None
+    df["ticker"] = ticker
+    return df.reset_index(drop=True)
+
+
 def fetch_history(
     ticker: str,
     start_date: str,
@@ -185,6 +224,16 @@ def fetch_history(
     cached_df = load_cached_history(ticker)
     if cached_df is not None and not cached_df.empty:
         return cached_df
+
+    # SSI FastConnect primary (vnstock quote.history fallback below).
+    try:
+        ssi_df = _fetch_ssi_daily(ticker, start_date, end_date)
+        if ssi_df is not None and not ssi_df.empty:
+            save_history_cache(ticker, ssi_df)
+            logger.info("%s history cached via SSI (%s rows)", ticker, len(ssi_df))
+            return ssi_df
+    except Exception as exc:
+        logger.warning("%s SSI history failed (%s); falling back to vnstock", ticker, exc)
 
     try:
         stock = Vnstock().stock(symbol=ticker, source=SOURCE2_SOURCE)
@@ -206,6 +255,15 @@ def fetch_history_direct(
     end_date: str,
     logger: logging.Logger,
 ) -> pd.DataFrame | None:
+    # SSI FastConnect primary (vnstock quote.history fallback below).
+    try:
+        ssi_df = _fetch_ssi_daily(ticker, start_date, end_date)
+        if ssi_df is not None and not ssi_df.empty:
+            logger.info("%s direct SSI history returned %s rows", ticker, len(ssi_df))
+            return ssi_df
+    except Exception as exc:
+        logger.warning("%s direct SSI history failed (%s); falling back to vnstock", ticker, exc)
+
     try:
         stock = Vnstock().stock(symbol=ticker, source=SOURCE2_SOURCE)
         raw_df = stock.quote.history(start=start_date, end=end_date, interval="1D")

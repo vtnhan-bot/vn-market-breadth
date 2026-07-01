@@ -1,4 +1,5 @@
 vnstock==3.5.0
+ssi-fc-data==2.2.2
 yfinance
 pandas
 numpy

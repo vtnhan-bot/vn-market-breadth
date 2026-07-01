@@ -2,11 +2,12 @@
 """Build a 20-session Relative Strength matrix for the pinned crypto universe.
 
 Mirrors rs_matrix_3T.py (Vietnam stocks vs VNINDEX) but for crypto vs BTC:
-  - Source: Binance public klines API (primary), yfinance fallback for symbols
-    not listed on Binance (e.g., KAS-USD). Binance publishes daily UTC bars
+  - Source: KuCoin public klines API (primary), yfinance fallback for symbols
+    not listed on KuCoin (e.g., KAS-USD). KuCoin publishes daily UTC bars
     in real-time, so the prior UTC day is fresh by ~07:01 ICT — eliminates
     Yahoo Finance's daily-aggregation lag that previously delayed crypto RS
-    by a full day.
+    by a full day. (Switched off Binance: it returns HTTP 451 from GCP
+    us-central1 where the engine runs.)
   - Universe: crypto_universe.csv (top-50 pinned, BTC included as benchmark only)
   - Benchmark: BTC-USD (excluded from rated cohort — it's the denominator)
   - Composite RS Rating: 30% relative-performance percentile + 70% weighted-momentum percentile
@@ -33,8 +34,8 @@ RS_LOOKBACK_CALENDAR_DAYS = 90
 RS_OUTPUT_SESSIONS = 20
 INITIAL_FETCH_BUFFER_DAYS = RS_LOOKBACK_CALENDAR_DAYS + 60
 YF_RATE_LIMIT_DELAY = 0.6  # yfinance fallback pacing
-BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
-BINANCE_FETCH_LIMIT = 200  # ~6.5 months of daily bars, well over RS_LOOKBACK_CALENDAR_DAYS
+KUCOIN_KLINES_URL = "https://api.kucoin.com/api/v1/market/candles"
+KUCOIN_FETCH_DAYS = 200  # ~6.5 months of daily bars, well over RS_LOOKBACK_CALENDAR_DAYS
 
 LOGGER = logging.getLogger("rs_matrix_crypto")
 
@@ -129,51 +130,65 @@ def _save_cached_history(ticker: str, df: pd.DataFrame) -> None:
     df.to_csv(_cache_path(ticker), index=False, encoding="utf-8-sig")
 
 
-def _to_binance_symbol(yahoo_ticker: str) -> str:
-    """Map Yahoo-style 'BTC-USD' to Binance USDT pair 'BTCUSDT'."""
-    return yahoo_ticker.replace("-USD", "USDT")
+def _to_kucoin_symbol(yahoo_ticker: str) -> str:
+    """Map Yahoo-style 'BTC-USD' to KuCoin pair 'BTC-USDT'. Passes an
+    already-USDT symbol through unchanged (guards against 'BTC-USDTT')."""
+    if yahoo_ticker.endswith("-USDT"):
+        return yahoo_ticker
+    if yahoo_ticker.endswith("-USD"):
+        return yahoo_ticker + "T"
+    return yahoo_ticker.replace("-USD", "-USDT")
 
 
-def _fetch_binance_klines(ticker: str, limit: int = BINANCE_FETCH_LIMIT) -> pd.DataFrame | None:
-    """Fetch daily OHLCV from Binance public klines API. Returns None on failure
-    (HTTP 400 for symbols not listed; network issues; empty response).
+def _fetch_kucoin_klines(ticker: str, days: int = KUCOIN_FETCH_DAYS) -> pd.DataFrame | None:
+    """Fetch daily OHLCV from KuCoin public klines API. Returns None on failure
+    (non-200000 code for symbols not listed; network issues; empty response).
 
-    Binance's daily kline open_time is 00:00 UTC of the bar's date; close_time is
-    23:59:59 UTC of the same date. Today's UTC bar is in-progress until 00:00 UTC
-    of the next day — _drop_in_progress_utc_bar handles that on the caller side.
+    KuCoin daily candle startAt is 00:00 UTC of the bar's date. Today's UTC bar
+    is in-progress until 00:00 UTC of the next day — _drop_in_progress_utc_bar
+    handles that on the caller side.
+
+    KuCoin candle payload order: [startAt_sec, open, CLOSE, HIGH, LOW, volume,
+    turnover] (close before high/low — opposite of Binance). Response is
+    newest-first; we sort ascending before returning.
     """
     import urllib.request
     import urllib.error
     import json as _json
 
-    symbol = _to_binance_symbol(ticker)
-    url = f"{BINANCE_KLINES_URL}?symbol={symbol}&interval=1d&limit={limit}"
+    symbol = _to_kucoin_symbol(ticker)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    start_ts = now_ts - (days + 5) * 86400
+    url = (f"{KUCOIN_KLINES_URL}?symbol={symbol}&type=1day"
+           f"&startAt={start_ts}&endAt={now_ts}")
     try:
         with urllib.request.urlopen(url, timeout=30) as resp:
-            raw = _json.loads(resp.read())
+            payload = _json.loads(resp.read())
     except urllib.error.HTTPError as exc:
-        LOGGER.warning("%s (%s) Binance HTTP %d: %s", ticker, symbol, exc.code, exc.reason)
+        LOGGER.warning("%s (%s) KuCoin HTTP %d: %s", ticker, symbol, exc.code, exc.reason)
         return None
     except Exception as exc:
-        LOGGER.warning("%s (%s) Binance fetch failed: %s", ticker, symbol, exc)
+        LOGGER.warning("%s (%s) KuCoin fetch failed: %s", ticker, symbol, exc)
         return None
 
-    if not raw:
+    if payload.get("code") != "200000" or not payload.get("data"):
         return None
 
     rows = []
-    for kline in raw:
-        bar_date = datetime.fromtimestamp(kline[0] / 1000, tz=timezone.utc).date()
+    for candle in payload["data"]:
+        bar_date = datetime.fromtimestamp(int(candle[0]), tz=timezone.utc).date()
         rows.append({
             "time": bar_date,
-            "open": float(kline[1]),
-            "high": float(kline[2]),
-            "low": float(kline[3]),
-            "close": float(kline[4]),
-            "volume": float(kline[5]),
+            "open": float(candle[1]),
+            "high": float(candle[3]),
+            "low": float(candle[4]),
+            "close": float(candle[2]),
+            "volume": float(candle[5]),
             "ticker": ticker,
         })
-    return pd.DataFrame(rows)
+    if not rows:
+        return None
+    return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
 
 
 def _fetch_yf_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
@@ -200,18 +215,18 @@ def _fetch_yf_history(ticker: str, start_date: str, end_date: str) -> pd.DataFra
 
 
 def incremental_sync_history(ticker: str) -> tuple[pd.DataFrame, str]:
-    """Fetch daily OHLC, Binance primary + yfinance fallback + cache last-resort.
+    """Fetch daily OHLC, KuCoin primary + yfinance fallback + cache last-resort.
 
-    Binance returns the prior UTC day immediately after 00:00 UTC (07:00 ICT),
+    KuCoin returns the prior UTC day immediately after 00:00 UTC (07:00 ICT),
     so the heatmap's rightmost session is always last UTC-trading-day, never
-    one-behind. yfinance is retained for the few coins not on Binance (KAS).
+    one-behind. yfinance is retained for the few coins not on KuCoin (KAS).
     """
-    fresh = _fetch_binance_klines(ticker)
+    fresh = _fetch_kucoin_klines(ticker)
     if fresh is not None and not fresh.empty:
         fresh = _drop_in_progress_utc_bar(fresh)
         if not fresh.empty:
             _save_cached_history(ticker, fresh)
-            return fresh, "binance"
+            return fresh, "kucoin"
 
     today = date.today()
     end_date = (today + timedelta(days=1)).isoformat()
@@ -224,12 +239,12 @@ def incremental_sync_history(ticker: str) -> tuple[pd.DataFrame, str]:
     cached = _load_cached_history(ticker)
     if cached is not None and not cached.empty:
         LOGGER.warning(
-            "%s: Binance + yfinance both failed; using cache through %s",
+            "%s: KuCoin + yfinance both failed; using cache through %s",
             ticker, cached["time"].max(),
         )
         return cached, "cache_fallback"
 
-    raise RuntimeError(f"{ticker}: Binance, yfinance, and cache all failed")
+    raise RuntimeError(f"{ticker}: KuCoin, yfinance, and cache all failed")
 
 
 def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
@@ -291,7 +306,7 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
     }
 
     rated_universe = universe_df[universe_df["ticker"] != BENCHMARK_TICKER].copy()
-    sync_counters = {"binance": 0, "yfinance_fallback": 0, "cache_fallback": 0}
+    sync_counters = {"kucoin": 0, "yfinance_fallback": 0, "cache_fallback": 0}
     failed: list[str] = []
     rows: list[dict] = []
 
@@ -373,8 +388,8 @@ def build_rs_matrix(universe_df: pd.DataFrame) -> pd.DataFrame:
         len(matrix), matrix["session_date"].nunique(),
     )
     LOGGER.info(
-        "Sync summary | binance=%s | yfinance_fallback=%s | cache_fallback=%s | benchmark=%s",
-        sync_counters["binance"], sync_counters["yfinance_fallback"],
+        "Sync summary | kucoin=%s | yfinance_fallback=%s | cache_fallback=%s | benchmark=%s",
+        sync_counters["kucoin"], sync_counters["yfinance_fallback"],
         sync_counters["cache_fallback"], benchmark_sync,
     )
     if failed:

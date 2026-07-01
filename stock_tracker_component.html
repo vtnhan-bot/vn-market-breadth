@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Performance Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .tracker-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 24px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .stock-unit {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .rs-box {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            cursor: default;
+        }
+
+        .rs-value {
+            font-size: 48px;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .percentage {
+            font-size: 18px;
+            font-weight: 600;
+            transition: color 0.3s ease;
+            cursor: default;
+        }
+
+        /* Success - Green for positive values */
+        .rs-box.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .percentage.success {
+            color: #10b981;
+        }
+
+        /* Danger - Red for negative values */
+        .rs-box.danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .percentage.danger {
+            color: #ef4444;
+        }
+
+        /* Neutral - Gray for zero */
+        .rs-box.neutral {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+        }
+
+        .percentage.neutral {
+            color: #6b7280;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .tracker-container {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: 16px;
+            }
+
+            .rs-value {
+                font-size: 40px;
+            }
+
+            .percentage {
+                font-size: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .tracker-container {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .stock-unit {
+                flex-direction: row;
+                gap: 16px;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .rs-box {
+                width: 80px;
+                height: 80px;
+                min-width: 80px;
+            }
+
+            .rs-value {
+                font-size: 32px;
+            }
+
+            .percentage {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="tracker-container">
+        <!-- Stock Unit 1 -->
+        <div class="stock-unit">
+            <div class="rs-box success">
+                <div class="rs-value">85</div>
+            </div>
+            <div class="percentage success">+2.45%</div>
+        </div>
+
+        <!-- Stock Unit 2 -->
+        <div class="stock-unit">
+            <div class="rs-box danger">
+                <div class="rs-value">42</div>
+            </div>
+            <div class="percentage danger">-1.23%</div>
+        </div>
+
+        <!-- Stock Unit 3 -->
+        <div class="stock-unit">
+            <div class="rs-box neutral">
+                <div class="rs-value">68</div>
+            </div>
+            <div class="percentage neutral">0.00%</div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Updates the color class of a stock unit based on the percentage value
+         * @param {Element} unit - The stock unit element
+         * @param {number} percentage - The percentage value
+         */
+        function updateStockUnit(unit, percentage) {
+            const rsBox = unit.querySelector('.rs-box');
+            const percentageEl = unit.querySelector('.percentage');
+
+            // Remove existing classes
+            rsBox.classList.remove('success', 'danger', 'neutral');
+            percentageEl.classList.remove('success', 'danger', 'neutral');
+
+            // Add appropriate class based on percentage
+            if (percentage > 0) {
+                rsBox.classList.add('success');
+                percentageEl.classList.add('success');
+            } else if (percentage < 0) {
+                rsBox.classList.add('danger');
+                percentageEl.classList.add('danger');
+            } else {
+                rsBox.classList.add('neutral');
+                percentageEl.classList.add('neutral');
+            }
+        }
+
+        /**
+         * Example: Update a stock unit dynamically
+         * Uncomment below to test with dynamic values
+         */
+        // const units = document.querySelectorAll('.stock-unit');
+        // units.forEach((unit, index) => {
+        //     const percentageEl = unit.querySelector('.percentage');
+        //     const percentage = parseFloat(percentageEl.textContent);
+        //     updateStockUnit(unit, percentage);
+        // });
+    </script>
+</body>
+</html>

@@ -1,5 +1,8 @@
 # Operations Playbook
 
+> **⚠ GCP note (updated 2026-06-21):** The schedule table below presents Cloud Scheduler jobs (`market-breadth-schedule`, `intraday-breadth-schedule`, `market-breadth-us-close`) and "crypto via Binance" as live behavior — this is stale. Current reality: the `market-breadth-job` and `intraday-breadth-job` Cloud Run jobs are triggered by **VM systemd timers** (`engine-market-breadth.timer` / `engine-intraday-breadth.timer` on the pattern-engine VM), **NOT Cloud Scheduler**. Crypto market data uses **KuCoin**, NOT Binance.
+> Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
+
 Common operational situations and how to handle them. All times in **Asia/Ho_Chi_Minh (ICT, UTC+7)**.
 
 ## Schedules currently running
