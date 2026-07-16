@@ -1,0 +1,13 @@
+[Unit]
+Description=VN Market Breadth - 15:15 (Mon-Fri) and 07:30 (Tue-Sat) Asia/Ho_Chi_Minh
+
+[Timer]
+# Two day-restricted fires in ICT (TZ suffix => systemd resolves wall-clock, not UTC).
+# Mirrors the prior engine-market-breadth schedule (Mon-Fri 15:15 + Tue-Sat 07:30).
+OnCalendar=Mon-Fri 15:15 Asia/Ho_Chi_Minh
+OnCalendar=Tue-Sat 07:30 Asia/Ho_Chi_Minh
+Persistent=false
+Unit=market-breadth.service
+
+[Install]
+WantedBy=timers.target
