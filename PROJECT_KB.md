@@ -7,11 +7,18 @@
 > - **Do NOT run the Cloud Scheduler steps below — they would recreate deleted jobs and incur cost.**
 > - Canonical current state: this project's CLAUDE.md → "GCP Deployment & Cost Safety", and d:\Claude\Devops\ARCHITECTURE.md. Content below is kept for reference.
 
+> **⚠ GCP note (updated 2026-06-27):** The VN daily + intraday pipelines were **migrated OFF Cloud Run onto the pattern-engine VM** (user `marketbreadth`, `/opt/market-breadth`, systemd `market-breadth.timer` Mon-Fri 15:15 + Tue-Sat 07:30 ICT, and `intraday-breadth.timer` every 15 min 09-14 ICT). The RS-history cache now stays on LOCAL disk (no GCS restore/persist — this killed the ~25k-object per-run re-upload); only the dashboard HTML/CSV/JSON are uploaded to `gs://vn-market-breadth/`. Full record: d:\Claude\Devops\CHANGELOG.md (2026-06-27).
+>
+> **⚠ Correction (verified 2026-07-17):** `market-breadth-job` / `intraday-breadth-job` are **DELETED, not dormant** — the Cloud Run fallback described above and in `CLAUDE.md` **does not exist**. `gcloud run jobs list` across all regions returns only `us-market-breadth-job` (a different engine). **The VM is the sole execution path, with no rollback target and no CI** — `/opt/market-breadth` is not a git checkout, so pushing to master deploys nothing. Deploy artifacts are now version-controlled under [`deploy/vm/`](deploy/vm/); `entrypoint.sh` / `deploy.sh` / `Dockerfile` at the repo root are **dead Cloud Run paths** that nothing invokes.
+>
+> **⚠ The persistent local cache introduced a silent stale-publish bug** (Tue–Fri served T‑1 all day, ~2026-06-30 → 07-16). Fixed 2026-07-17 — read [`docs/STALE_DASHBOARD_FIX.md`](docs/STALE_DASHBOARD_FIX.md) **before touching the EOD cache or `verify_fresh_eod_dataset`**.
+
 > **Purpose**: a single document that lets a senior engineer (or a future Claude session) get from cold-start to confidently shipping changes in under 30 minutes. Read this first; it points you at everything else.
 >
 > **Last refresh**: 2026-06-01 (after May 17–22 shipment: DXY 150-session chart, intraday RS heatmap with HH:MM column + EOD-catch-up guard, VN-Index ex-Vingroup line chart; plus the May 2026 cost analysis — May bill ~62K VND, Artifact Registry cleanup policy keep-last-5 + delete-older-than-7d applied 2026-06-01, AR storage drop expected within ~24h).
 >
 > **Topic deep-dives** in [`docs/`](docs/):
+> - [`docs/STALE_DASHBOARD_FIX.md`](docs/STALE_DASHBOARD_FIX.md) — **stale-dashboard fix + cache headers + cost reality + session handoff (2026-07-17)**: why the 15:15 run republished T‑1 for ~2.5 weeks while exiting 0, the cache/guard invariants you must not break, the `no-store`→304 change, the staged R2 leg, and three corrections to what the cost docs claim (no 07-18 cliff; the GCS free op pool is shared and exhausted; `gcp-stop-jul13` doesn't exist). **Read this before touching the EOD cache, `verify_fresh_eod_dataset`, or the cost model.**
 > - [`docs/SSI_MIGRATION.md`](docs/SSI_MIGRATION.md) — **vnstock → SSI FastConnect migration + session handoff (2026-06-22)**: what changed, contracts/units, verification, deploy state, DevOps context, and the open GCP-exit threads. Read this for current data-source reality.
 > - [`docs/INTRADAY_BREADTH.md`](docs/INTRADAY_BREADTH.md) — the live 15-min breadth chart (architecture, data contract, JS polling, Đóng cửa rollover, intraday-RS sibling hook).
 > - [`docs/INTRADAY_RS.md`](docs/INTRADAY_RS.md) — the live 15-min RS heatmap update for 230 VN tickers (HH:MM column, post-EOD JS guard, **SSI FastConnect** price source).
