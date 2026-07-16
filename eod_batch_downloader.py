@@ -21,6 +21,7 @@ import logging
 import os
 import shutil
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -45,6 +46,10 @@ ERROR_BACKOFF_SECONDS = 60
 FETCH_DAYS_BACK = 420
 MIN_VALID_TICKERS = 95
 INDEX_TICKER = "VNINDEX"
+# VN market closes 14:45 ICT; daily bars settle by ~15:00. A cache entry written
+# before this hour cannot contain today's close. Mirrors market_breadth.py's
+# freshness_cutoff -- keep the two in step.
+POST_CLOSE_SETTLE_HOUR = 15
 
 LOGGER = logging.getLogger("eod_batch_downloader")
 
@@ -170,7 +175,10 @@ def build_fetch_universe() -> list[str]:
 
 def get_today_cache_dir() -> Path:
     """Return today's cache directory, creating it if needed."""
-    today_dir = DATA_DIR / date.today().isoformat()
+    # Explicit ICT rather than date.today(): archive_previous_day_cache() and
+    # market_breadth.get_today_combined_dataset_path() both key on ICT, and a
+    # naive clock silently disagrees with them whenever TZ is not set.
+    today_dir = DATA_DIR / datetime.now(ICT).date().isoformat()
     today_dir.mkdir(parents=True, exist_ok=True)
     return today_dir
 
@@ -239,8 +247,37 @@ def normalize_history_frame(raw_df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     ].dropna(subset=["time", "close"])
     normalized = normalized.sort_values("time").drop_duplicates("time", keep="last")
     normalized["ticker"] = ticker
-    normalized["fetched_at"] = datetime.now().isoformat(timespec="seconds")
+    normalized["fetched_at"] = datetime.now(ICT).isoformat(timespec="seconds")
     return normalized.reset_index(drop=True)
+
+
+def cache_entry_is_current(
+    cached_df: pd.DataFrame,
+    end_date: str,
+    now_ict: datetime,
+) -> bool:
+    """Decide whether a same-day cache entry may be reused instead of refetched.
+
+    The cache directory is keyed by ICT calendar date, so the 07:30 ICT run and
+    the 15:15 ICT EOD run of the same weekday share it. The 07:30 snapshot
+    legitimately stops at T-1 (VN has not traded yet), so reusing it after the
+    close republishes yesterday's closes as today's -- the stale-dashboard bug.
+
+    Pre-close runs may reuse any same-day entry. Post-close runs may only reuse
+    an entry that already carries today's bar; anything older is refetched. That
+    keeps same-slot retries cheap (a 15:40 rerun reuses the 15:15 fetch) without
+    ever letting a pre-close snapshot survive into a post-close publish. On a VN
+    holiday no entry ever carries today's bar, so a post-close run simply
+    refetches and gets the same last-trading-day data back -- correct, just not
+    free. Deliberately no calendar lookup: the repo has no holiday data, and
+    guessing wrong here would silently republish stale closes.
+    """
+    if now_ict.hour < POST_CLOSE_SETTLE_HOUR:
+        return True
+    if cached_df.empty or "time" not in cached_df.columns:
+        return False
+    latest_bar = max(pd.to_datetime(cached_df["time"]).dt.date)
+    return latest_bar >= date.fromisoformat(end_date)
 
 
 def load_cached_ticker(cache_path: Path, ticker: str) -> pd.DataFrame:
@@ -290,7 +327,7 @@ def _fetch_ssi_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFram
     if out.empty:
         return None
     out["ticker"] = ticker
-    out["fetched_at"] = datetime.now().isoformat(timespec="seconds")
+    out["fetched_at"] = datetime.now(ICT).isoformat(timespec="seconds")
     return out.reset_index(drop=True)
 
 
@@ -374,21 +411,32 @@ def fetch_with_retry(
     cache_dir: Path,
     start_date: str,
     end_date: str,
+    now_ict: datetime,
 ) -> FetchResult:
     """Fetch a ticker using today's cache first, then vnstock source failover."""
     cache_path = get_ticker_cache_path(cache_dir, ticker)
+    cached_df: pd.DataFrame | None = None
     if cache_path.exists():
         try:
             cached_df = load_cached_ticker(cache_path, ticker)
-            LOGGER.info("%s loaded from cache", ticker)
-            return FetchResult(
-                ticker=ticker,
-                status="cached",
-                dataframe=cached_df,
-                detail="Loaded from disk cache.",
+            if cache_entry_is_current(cached_df, end_date, now_ict):
+                LOGGER.info("%s loaded from cache", ticker)
+                return FetchResult(
+                    ticker=ticker,
+                    status="cached",
+                    dataframe=cached_df,
+                    detail="Loaded from disk cache.",
+                )
+            stale_bar = max(pd.to_datetime(cached_df["time"]).dt.date)
+            LOGGER.info(
+                "%s cache stops at %s (pre-close snapshot); refetching for %s",
+                ticker,
+                stale_bar,
+                end_date,
             )
         except Exception as exc:
             LOGGER.warning("%s cache read failed: %s", ticker, exc)
+            cached_df = None
 
     try:
         fetched_df = fetch_with_failover(
@@ -411,6 +459,26 @@ def fetch_with_retry(
             detail=f"Fetched successfully via source {source}.",
         )
     except Exception as exc:
+        # Refetch failed. Prefer the rejected pre-close entry over dropping the
+        # ticker: its 420-day history is still needed for the moving averages,
+        # and losing tickers outright would shrink the universe below
+        # MIN_SUCCESSFUL_TICKERS and abort an otherwise publishable run. The
+        # rows are honestly stale, so it is the freshness guard's coverage
+        # check -- not this function -- that decides whether the run publishes.
+        if cached_df is not None and not cached_df.empty:
+            LOGGER.warning(
+                "%s refetch failed (%s); falling back to its pre-close cache entry "
+                "which stops at %s.",
+                ticker,
+                exc,
+                max(pd.to_datetime(cached_df["time"]).dt.date),
+            )
+            return FetchResult(
+                ticker=ticker,
+                status="stale_cache",
+                dataframe=cached_df,
+                detail=f"Refetch failed; reused pre-close cache entry: {exc}",
+            )
         LOGGER.error("%s failed after vnstock failover: %s", ticker, exc)
         return FetchResult(
             ticker=ticker,
@@ -447,18 +515,28 @@ def main() -> None:
     cache_dir = get_today_cache_dir()
     tickers = build_fetch_universe()
 
-    end_date = date.today().isoformat()
-    start_date = (date.today() - timedelta(days=FETCH_DAYS_BACK)).isoformat()
+    # One clock for the whole sweep: the run spans ~6 minutes, and letting each
+    # ticker re-read the time would flip the cache rule mid-run at 15:00.
+    now_ict = datetime.now(ICT)
+    end_date = now_ict.date().isoformat()
+    start_date = (now_ict.date() - timedelta(days=FETCH_DAYS_BACK)).isoformat()
 
     LOGGER.info("Starting EOD batch download for %s tickers", len(tickers))
     LOGGER.info("Cache directory: %s", cache_dir)
     LOGGER.info("API sources (prioritized): %s", API_SOURCES)
     LOGGER.info("Fetch window: %s to %s", start_date, end_date)
+    LOGGER.info(
+        "Run slot: %s ICT (%s) -- cache entries without a %s bar %s",
+        now_ict.strftime("%H:%M"),
+        "post-close" if now_ict.hour >= POST_CLOSE_SETTLE_HOUR else "pre-close",
+        end_date,
+        "are refetched" if now_ict.hour >= POST_CLOSE_SETTLE_HOUR else "are reused as-is",
+    )
 
     results: list[FetchResult] = []
     for index, ticker in enumerate(tickers, start=1):
         LOGGER.info("Processing %s/%s: %s", index, len(tickers), ticker)
-        results.append(fetch_with_retry(ticker, cache_dir, start_date, end_date))
+        results.append(fetch_with_retry(ticker, cache_dir, start_date, end_date, now_ict))
 
     combined_df, valid_tickers = compile_dataset(results)
     combined_path = cache_dir / "combined_dataset.csv"
@@ -486,6 +564,28 @@ def main() -> None:
     ]
     LOGGER.info("Valid tickers: %s", len(valid_tickers))
     LOGGER.info("Failed tickers: %s", len(failed_tickers))
+
+    # A 100%-cached run looks identical to a healthy one in every other log line
+    # (load_cached_ticker re-emits the original fetched_at and source), which is
+    # how the stale dashboard went unnoticed. State the split and the newest bar
+    # outright so "did this run actually fetch?" is answerable from the log.
+    status_counts = Counter(result.status for result in results)
+    newest_bar = combined_df["time"].max() if not combined_df.empty else "n/a"
+    LOGGER.info(
+        "Run summary | fetched=%s cached=%s stale_cache=%s failed=%s | newest bar in dataset=%s",
+        status_counts.get("fetched", 0),
+        status_counts.get("cached", 0),
+        status_counts.get("stale_cache", 0),
+        status_counts.get("failed", 0),
+        newest_bar,
+    )
+    if status_counts.get("stale_cache"):
+        LOGGER.warning(
+            "%s ticker(s) fell back to a pre-close cache entry after a failed refetch; "
+            "their latest bar is older than %s.",
+            status_counts["stale_cache"],
+            end_date,
+        )
 
     if len(valid_tickers) < MIN_VALID_TICKERS:
         LOGGER.critical(

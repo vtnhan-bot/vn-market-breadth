@@ -289,11 +289,13 @@ def update_intraday_json_on_gcs(now_ict: datetime, breadth: dict, eod_history: l
     existing["updates"] = sorted_intraday
     existing["last_updated_ict"] = now_ict.strftime("%H:%M %d/%m/%Y")
 
-    blob.cache_control = "no-cache, no-store, must-revalidate"
-    blob.upload_from_string(
-        json.dumps(existing, ensure_ascii=False, indent=2),
-        content_type="application/json",
-    )
+    body = json.dumps(existing, ensure_ascii=False, indent=2)
+    blob.cache_control = "no-cache, must-revalidate"  # not no-store: allow 304 revalidation
+    blob.upload_from_string(body, content_type="application/json")
+
+    import r2_publish
+    r2_publish.put_bytes(GCS_INTRADAY_KEY, body, "application/json")
+
     return existing
 
 

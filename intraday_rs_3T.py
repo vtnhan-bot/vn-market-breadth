@@ -244,11 +244,12 @@ def publish_intraday_rs(payload: dict) -> None:
     from google.cloud import storage
     client = storage.Client()
     blob = client.bucket(GCS_BUCKET).blob(GCS_INTRADAY_RS_KEY)
-    blob.cache_control = "no-cache, no-store, must-revalidate"
-    blob.upload_from_string(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        content_type="application/json",
-    )
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    blob.cache_control = "no-cache, must-revalidate"  # not no-store: allow 304 revalidation
+    blob.upload_from_string(body, content_type="application/json")
+
+    import r2_publish
+    r2_publish.put_bytes(GCS_INTRADAY_RS_KEY, body, "application/json")
 
 
 def run_intraday_rs(now_ict: datetime, combined_path: Path) -> None:

@@ -41,6 +41,14 @@ IS_CI           = bool(os.environ.get("GITHUB_ACTIONS"))
 CACHE_HOURS     = 4     # Re-fetch if cache older than N hours
 AUDIT_EXPORT_FORMAT = "csv"
 MIN_SUCCESSFUL_TICKERS = 95
+# VN market closes 14:45 ICT; daily bars settle by ~15:00. Mirrors
+# eod_batch_downloader.POST_CLOSE_SETTLE_HOUR -- keep the two in step.
+POST_CLOSE_SETTLE_HOUR = 15
+# Share of the top-100 breadth universe that must carry the dataset's newest
+# session. Guards against a partial refetch, where a handful of fresh tickers
+# drag max(time) forward while the rest stay on yesterday's close. Measured over
+# tickers.csv, not the wider RS universe -- see describe_eod_dataset.
+MIN_LATEST_SESSION_COVERAGE = 0.80
 INDEX_TICKER = "VNINDEX"
 INSTITUTIONAL_UNIVERSE_3T_PATH = SCRIPT_DIR / "institutional_universe_3T.csv"
 RS_FIXED_TICKERS_PATH = SCRIPT_DIR / "rs_fixed_tickers.csv"
@@ -90,21 +98,112 @@ def get_today_combined_dataset_path():
     today_str = datetime.now(ICT).date().isoformat()
     return DATA_DIR / today_str / "combined_dataset.csv"
 
+def _newest_fetched_at(fetched_at_series):
+    """Return the newest fetched_at stamp in a dataset as an ICT-aware datetime.
+
+    Rows written before 2026-07-17 carry a naive local stamp; the downloader now
+    writes them ICT-aware. Treat naive values as ICT so a dataset spanning the
+    change still compares correctly.
+    """
+    newest = None
+    for raw in fetched_at_series.dropna().astype(str).unique():
+        try:
+            stamp = datetime.fromisoformat(raw)
+        except ValueError:
+            continue
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=ICT)
+        if newest is None or stamp > newest:
+            newest = stamp
+    return newest
+
+
+def describe_eod_dataset(path, breadth_universe):
+    """Summarise what a combined_dataset.csv actually contains.
+
+    Returns (latest_session, coverage, newest_fetched_at).
+
+    Coverage is measured over breadth_universe -- the tickers.csv top-100 the
+    breadth chart is actually plotted from -- not over every ticker in the file.
+    The dataset also carries the wider ~230-name RS universe, and a floor
+    measured against that larger population would be diluted by a factor of
+    ~2.3: a concentrated outage could leave a big share of the *plotted* series
+    on yesterday's close and still clear the floor. A ticker absent from the
+    dataset entirely counts against coverage, same as one stuck on an old bar.
+    """
+    wanted = {"time", "ticker", "fetched_at"}
+    df = pd.read_csv(path, encoding="utf-8-sig", usecols=lambda c: c in wanted)
+    if df.empty or "time" not in df.columns or "ticker" not in df.columns:
+        raise RuntimeError(f"CRITICAL: {path} is empty or missing time/ticker columns.")
+
+    sessions = pd.to_datetime(df["time"]).dt.date
+    latest_session = sessions.max()
+    on_latest = set(df.loc[sessions == latest_session, "ticker"].astype(str))
+    universe = {str(t) for t in breadth_universe} or set(df["ticker"].astype(str))
+    coverage = len(universe & on_latest) / len(universe) if universe else 0.0
+    newest_fetch = _newest_fetched_at(df["fetched_at"]) if "fetched_at" in df.columns else None
+    return latest_session, coverage, newest_fetch
+
+
 def verify_fresh_eod_dataset():
     now_ict = datetime.now(ICT)
     today_path = get_today_combined_dataset_path()
     # Daily pipeline scheduled at 15:15 ICT; today's data settles by ~15:00.
     # VN market closes 14:45; vnstock daily bar settles by ~15:00.
-    freshness_cutoff = now_ict.replace(hour=15, minute=0, second=0, microsecond=0)
+    freshness_cutoff = now_ict.replace(
+        hour=POST_CLOSE_SETTLE_HOUR, minute=0, second=0, microsecond=0
+    )
 
-    # Strict path: post-VN-close. Today's settled dataset must exist and be
-    # newer than 15:00 ICT. This is what the 15:15 ICT scheduled run hits.
+    # Strict path: post-VN-close, i.e. what the 15:15 ICT scheduled run hits.
+    # Validate what the dataset CONTAINS, never when the file was last touched:
+    # the 15:15 run rewrites combined_dataset.csv unconditionally, so its mtime
+    # always looks fresh -- including on 2026-06-30..07-16, when it was a
+    # byte-for-byte republish of the 07:30 pre-close snapshot.
     if now_ict >= freshness_cutoff:
         if not today_path.exists():
             raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
         modified_at = datetime.fromtimestamp(today_path.stat().st_mtime, ICT)
-        if modified_at.date() != now_ict.date() or modified_at < freshness_cutoff:
-            raise RuntimeError("CRITICAL: EOD Data Not Fresh. Aborting HTML Update.")
+        latest_session, coverage, newest_fetch = describe_eod_dataset(
+            today_path, read_tickers()
+        )
+
+        if newest_fetch is None:
+            raise RuntimeError(
+                "CRITICAL: EOD dataset carries no readable fetched_at stamp, so it cannot be "
+                "shown to post-date today's close. Aborting HTML Update."
+            )
+        if newest_fetch < freshness_cutoff:
+            raise RuntimeError(
+                "CRITICAL: EOD dataset was last fetched at "
+                f"{newest_fetch.strftime('%d/%m/%Y %H:%M')} ICT, before today's "
+                f"{POST_CLOSE_SETTLE_HOUR}:00 close. A pre-close snapshot is being republished "
+                "as today's data. Aborting HTML Update."
+            )
+        if coverage < MIN_LATEST_SESSION_COVERAGE:
+            raise RuntimeError(
+                f"CRITICAL: only {coverage:.0%} of the top-100 breadth universe carries the "
+                f"dataset's newest session ({latest_session}), below the "
+                f"{MIN_LATEST_SESSION_COVERAGE:.0%} floor. The refetch was partial. "
+                "Aborting HTML Update."
+            )
+        if latest_session < now_ict.date():
+            # Refetched after the close, full coverage, yet still no bar for
+            # today: either VN did not trade (a holiday -- the repo carries no
+            # trading calendar to say which) or the upstream source is lagging.
+            # Publish anyway. The chart's "Dữ liệu mới nhất" label is derived
+            # from the data itself so it stays truthful, and aborting would also
+            # freeze the US macro and crypto RS panels that ARE fresh today.
+            log(
+                f"WARNING: dataset was refetched at {newest_fetch.strftime('%H:%M')} ICT but its "
+                f"newest session is {latest_session}, not {now_ict.date()}. VN likely did not "
+                "trade today (holiday), or the upstream source is lagging. Publishing with the "
+                "true data date."
+            )
+        else:
+            log(
+                f"EOD content verified: session {latest_session}, {coverage:.0%} ticker coverage, "
+                f"fetched {newest_fetch.strftime('%H:%M')} ICT."
+            )
         return today_path, modified_at
 
     # Permissive path: pre-15:00 ICT (06:00 ICT US-close refresh, ad-hoc
@@ -726,18 +825,18 @@ def refresh_intraday_breadth_json(breadth: pd.DataFrame, gcs_bucket: str = "vn-m
         "last_updated_ict": now_ict.strftime("%H:%M %d/%m/%Y"),
     }
 
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
     try:
         client = storage.Client()
         blob = client.bucket(gcs_bucket).blob("intraday_breadth.json")
-        blob.cache_control = "no-cache, no-store, must-revalidate"
-        blob.upload_from_string(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            content_type="application/json",
-        )
+        blob.cache_control = "no-cache, must-revalidate"  # not no-store: allow 304 revalidation
+        blob.upload_from_string(body, content_type="application/json")
         log(
             f"intraday_breadth.json refreshed: {len(eod_history)} EODs ending "
             f"{eod_history[-1]['date']} + 1 'Đóng cửa' tick for {today_idx.date()}"
         )
+        import r2_publish
+        r2_publish.put_bytes("intraday_breadth.json", body, "application/json")
     except Exception as exc:
         log(f"WARNING: Failed to refresh intraday_breadth.json on GCS: {exc}")
 
