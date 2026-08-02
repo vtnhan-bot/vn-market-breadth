@@ -35,7 +35,21 @@ SOURCE2_SOURCE = "KBS"
 RS_RATE_LIMIT_DELAY_SECONDS = 1.1
 UNIVERSE_LIMIT = 200
 UNIVERSE_LOOKBACK_DAYS = 120
-RS_LOOKBACK_CALENDAR_DAYS = 90
+
+# --- RS heatmap tuning (the "recency" profile) -----------------------------
+# Chosen 2026-08-02 (option C): shorten the momentum windows and lighten/shorten
+# the benchmark-relative anchor so a fresh day registers in the 1-99 rating
+# instead of being drowned by a 90-day memory. Blended effective mean lookback
+# drops from ~26 to ~10 sessions; responsiveness (corr of 1-session rating move
+# vs that day's return) rises ~0.74 -> ~0.82. Validated on live data.
+#
+# rs_matrix_3T.py (EOD) imports all three from here. intraday_rs_3T.py keeps its
+# OWN copies (it must not import this module — rs_source2 pulls vnstock at load,
+# which has no place in the every-15-min tick) and MUST be kept equal to these,
+# or the live HH:MM column jumps when the EOD run takes over.
+RS_LOOKBACK_CALENDAR_DAYS = 45                            # was 90 (vs-VNINDEX anchor)
+RS_MOMENTUM_WINDOWS = ((3, 0.50), (5, 0.30), (10, 0.20))  # was 5/10/20; (sessions, weight)
+RS_BLEND_RS_WEIGHT = 0.20                                # was 0.30; rest weights momentum
 RS_OUTPUT_SESSIONS = 20
 COMPANY_CACHE_REFRESH_DAYS = 30
 INDEX_TICKER = "VNINDEX"
