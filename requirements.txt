@@ -5,3 +5,4 @@ pandas
 numpy
 openpyxl
 python-dotenv
+boto3  # only needed for the Cloudflare R2 publish leg (r2_publish.py)

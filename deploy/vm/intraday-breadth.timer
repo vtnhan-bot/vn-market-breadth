@@ -1,0 +1,10 @@
+[Unit]
+Description=VN intraday breadth - every 15 min, 09:00-14:45 ICT weekdays (script self-gates to trading window)
+
+[Timer]
+OnCalendar=Mon-Fri 09..14:00/15 Asia/Ho_Chi_Minh
+Persistent=false
+Unit=intraday-breadth.service
+
+[Install]
+WantedBy=timers.target

@@ -18,8 +18,10 @@ import pandas as pd
 
 from rs_source2 import (
     INDEX_TICKER,
+    RS_BLEND_RS_WEIGHT,
     RS_FIXED_TICKERS_PATH,
     RS_LOOKBACK_CALENDAR_DAYS,
+    RS_MOMENTUM_WINDOWS,
     RS_OUTPUT_SESSIONS,
     configure_logging,
 )
@@ -109,15 +111,16 @@ def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
 
 
 def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) -> float:
-    """Weighted 5/10/20-session momentum, shown as pct above or below 1.0.
+    """Weighted multi-session momentum, shown as pct above or below 1.0.
 
-    Shortened from 10/20/60 to 5/10/20 (commit on 2026-06-XX) so the heatmap
-    weights recent price action more heavily. Mean-weighted lookback drops
-    from ~21 sessions to ~9.5 sessions. Same 50/30/20 weighting shape; only
-    the windows changed.
+    Windows and weights come from RS_MOMENTUM_WINDOWS (rs_source2). Current
+    profile 3/5/10 @ 50/30/20 (the "recency" tuning, 2026-08-02): mean-weighted
+    lookback ~4.6 sessions, down from ~9.5 at 5/10/20. intraday_rs_3T mirrors
+    this window set exactly.
     """
     history_df = history_df[history_df["time"] <= session_date].sort_values("time")
-    if len(history_df) < 21:
+    min_sessions = max(lb for lb, _ in RS_MOMENTUM_WINDOWS) + 1
+    if len(history_df) < min_sessions:
         return np.nan
 
     current_close = pd.to_numeric(history_df.iloc[-1]["close"], errors="coerce")
@@ -125,7 +128,7 @@ def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) ->
         return np.nan
 
     weighted_ratio = 0.0
-    for lookback, weight in ((5, 0.50), (10, 0.30), (20, 0.20)):
+    for lookback, weight in RS_MOMENTUM_WINDOWS:
         base_close = pd.to_numeric(history_df.iloc[-(lookback + 1)]["close"], errors="coerce")
         if pd.isna(base_close) or base_close <= 0:
             return np.nan
@@ -217,9 +220,11 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
         method="average",
         pct=True,
     )
-    # Blend RS (relative performance) with momentum: 30% RS + 70% momentum
+    # Blend RS (relative performance) with momentum. RS_BLEND_RS_WEIGHT on the
+    # vs-VNINDEX anchor, the remainder on short-window momentum (0.20 / 0.80).
     matrix_df["rs_pct_blended"] = (
-        0.30 * matrix_df["rs_pct"] + 0.70 * matrix_df["weighted_momentum_pct"]
+        RS_BLEND_RS_WEIGHT * matrix_df["rs_pct"]
+        + (1.0 - RS_BLEND_RS_WEIGHT) * matrix_df["weighted_momentum_pct"]
     )
     matrix_df["rs_rating"] = (
         ((matrix_df["rs_pct_blended"] * 98) + 1)

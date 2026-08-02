@@ -1,0 +1,15 @@
+[Unit]
+Description=VN Market Breadth - daily dashboard pipeline (VM, replaces market-breadth-job Cloud Run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=marketbreadth
+Group=marketbreadth
+WorkingDirectory=/opt/market-breadth
+Environment=TZ=Asia/Ho_Chi_Minh
+ExecStart=/opt/market-breadth/run.sh
+TimeoutStartSec=1800
+StandardOutput=append:/var/log/market-breadth.log
+StandardError=append:/var/log/market-breadth.log

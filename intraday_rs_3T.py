@@ -49,7 +49,14 @@ ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 GCS_BUCKET = os.environ.get("INTRADAY_GCS_BUCKET", "vn-market-breadth")
 GCS_INTRADAY_RS_KEY = "intraday_rs_3T.json"
 
-RS_LOOKBACK_CALENDAR_DAYS = 90  # match rs_matrix_3T.py
+# These THREE MUST equal rs_source2.RS_LOOKBACK_CALENDAR_DAYS / RS_MOMENTUM_WINDOWS
+# / RS_BLEND_RS_WEIGHT. They are duplicated (not imported) on purpose: rs_source2
+# pulls vnstock at import, which has no place in the every-15-min intraday tick.
+# If they drift from rs_source2, the live HH:MM column jumps when the EOD run
+# recomputes the same session. The "recency" profile (option C, 2026-08-02):
+RS_LOOKBACK_CALENDAR_DAYS = 45
+RS_MOMENTUM_WINDOWS = ((3, 0.50), (5, 0.30), (10, 0.20))
+RS_BLEND_RS_WEIGHT = 0.20
 
 LOGGER = logging.getLogger("intraday_rs_3T")
 
@@ -129,17 +136,18 @@ def _compute_return_90d(history: pd.DataFrame, intraday_price: float, today: "da
 
 
 def _compute_weighted_momentum(history: pd.DataFrame, intraday_price: float) -> float:
-    """Weighted 5/10/20-session momentum vs intraday price. Matches
-    rs_matrix_3T.calculate_weighted_momentum_score with intraday_price
-    substituted as 'current_close'. Shortened from 10/20/60 to 5/10/20 so
-    the intraday HH:MM column reflects recent action more aggressively.
+    """Weighted multi-session momentum vs the live intraday price. Matches
+    rs_matrix_3T.calculate_weighted_momentum_score with intraday_price as
+    'current_close'. Windows = RS_MOMENTUM_WINDOWS (3/5/10 @ 50/30/20). Note the
+    base offset is iloc[-lookback], not -(lookback+1): `history` is the EOD
+    series WITHOUT today's (unclosed) bar, so N sessions back is -lookback.
     """
     if intraday_price is None or pd.isna(intraday_price) or intraday_price <= 0:
         return np.nan
-    if len(history) < 20:
+    if len(history) < max(lb for lb, _ in RS_MOMENTUM_WINDOWS):
         return np.nan
     weighted_ratio = 0.0
-    for lookback, weight in ((5, 0.50), (10, 0.30), (20, 0.20)):
+    for lookback, weight in RS_MOMENTUM_WINDOWS:
         if len(history) < lookback:
             return np.nan
         base_close = pd.to_numeric(history.iloc[-lookback]["close"], errors="coerce")
@@ -216,7 +224,8 @@ def compute_intraday_rs(combined_path: Path, now_ict: datetime) -> dict | None:
     df["rs_pct"] = df["stock_return_90d"].rank(method="average", pct=True)
     df["weighted_momentum_pct"] = df["weighted_momentum_score"].rank(method="average", pct=True)
     df["rs_pct_blended"] = (
-        0.30 * df["rs_pct"].fillna(0.0) + 0.70 * df["weighted_momentum_pct"].fillna(0.0)
+        RS_BLEND_RS_WEIGHT * df["rs_pct"].fillna(0.0)
+        + (1.0 - RS_BLEND_RS_WEIGHT) * df["weighted_momentum_pct"].fillna(0.0)
     )
     df["rs_rating"] = (
         ((df["rs_pct_blended"] * 98) + 1).round().clip(1, 99).astype("Int64")
@@ -244,11 +253,12 @@ def publish_intraday_rs(payload: dict) -> None:
     from google.cloud import storage
     client = storage.Client()
     blob = client.bucket(GCS_BUCKET).blob(GCS_INTRADAY_RS_KEY)
-    blob.cache_control = "no-cache, no-store, must-revalidate"
-    blob.upload_from_string(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        content_type="application/json",
-    )
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    blob.cache_control = "no-cache, must-revalidate"  # not no-store: allow 304 revalidation
+    blob.upload_from_string(body, content_type="application/json")
+
+    import r2_publish
+    r2_publish.put_bytes(GCS_INTRADAY_RS_KEY, body, "application/json")
 
 
 def run_intraday_rs(now_ict: datetime, combined_path: Path) -> None:
