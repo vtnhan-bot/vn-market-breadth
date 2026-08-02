@@ -1,0 +1,41 @@
+name: Validate
+
+# The VN breadth pipelines run as systemd units on the pattern-engine VM, deployed
+# by hand (scp + install) — /opt/market-breadth is not a git checkout and there is
+# no CD to it. See docs/STALE_DASHBOARD_FIX.md. This CI therefore VALIDATES only:
+# it catches syntax/compile breakage before a manual deploy. It does NOT build a
+# Docker image or touch GCP — the old workflow did, targeting the now-DELETED
+# market-breadth-job / intraday-breadth-job Cloud Run jobs, which is why it failed
+# on every push and would have cost Cloud Build + Artifact Registry to "fix".
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # py_compile parses to bytecode without importing, so heavy third-party
+      # deps (vnstock, pandas, boto3) are not needed and no network is touched.
+      - name: Byte-compile all tracked Python
+        run: git ls-files -z '*.py' | xargs -0 -n1 python -m py_compile
+
+      - name: Syntax-check all tracked shell scripts
+        run: git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n
+
+      - name: Sanity-check rescued systemd units
+        run: |
+          set -e
+          for f in $(git ls-files 'deploy/vm/*.service' 'deploy/vm/*.timer'); do
+            grep -q '^\[' "$f" || { echo "::error file=$f::no section header"; exit 1; }
+          done
+          echo "systemd units OK"
