@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 # OHLC history now comes from SSI FastConnect first (see _fetch_ssi_daily), with
@@ -30,6 +31,7 @@ RS_MATRIX_DATA_PATH = SCRIPT_DIR / "rs_matrix_data.csv"
 RS_METADATA_CACHE_PATH = CACHE_DIR / "rs_company_overview_cache.csv"
 RS_HISTORY_CACHE_DIR = CACHE_DIR / "rs_history"
 RS_ARCHIVE_DIR = CACHE_DIR / "archive"
+ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 
 SOURCE2_SOURCE = "KBS"
 RS_RATE_LIMIT_DELAY_SECONDS = 1.1
@@ -128,6 +130,47 @@ def archive_rs_cache_file(ticker: str) -> Path | None:
     return archive_path
 
 
+# Fallback logger for helpers below that have no `logger` parameter in their
+# signature (normalize_history_frame / _fetch_ssi_daily are called both from
+# logger-carrying functions and from logger-less ones like load_cached_history).
+_LOGGER = logging.getLogger(__name__)
+
+
+def _drop_degenerate_ohlc_rows(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Drop OHLC rows that are structurally impossible, before they are cached.
+
+    dropna(subset=["time", "close"]) alone lets through a halted ticker's
+    close=0 (0/1000 survives dropna), high<low, or a close outside [low, high]
+    -- any of which corrupts the RS calculation downstream. Open/high/low/
+    volume may be NA (some feeds omit them), so each check only applies where
+    its inputs are present.
+    """
+    if df.empty:
+        return df
+
+    bad = df["close"] <= 0
+
+    has_hl = df["high"].notna() & df["low"].notna()
+    bad |= has_hl & (df["high"] < df["low"])
+    bad |= has_hl & (df["close"] < df["low"])
+    bad |= has_hl & (df["close"] > df["high"])
+
+    has_open = df["open"].notna()
+    bad |= has_open & (df["open"] <= 0)
+    bad |= has_open & has_hl & ((df["open"] < df["low"]) | (df["open"] > df["high"]))
+
+    bad |= df["volume"].notna() & (df["volume"] < 0)
+
+    dropped = int(bad.sum())
+    if dropped:
+        _LOGGER.warning(
+            "%s: dropped %s row(s) with impossible OHLC (close<=0, high<low, "
+            "or close/open outside [low,high])",
+            ticker, dropped,
+        )
+    return df[~bad].reset_index(drop=True)
+
+
 def normalize_history_frame(raw_df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     if raw_df is None or raw_df.empty:
         raise ValueError(f"{ticker}: history payload is empty.")
@@ -159,7 +202,9 @@ def normalize_history_frame(raw_df: pd.DataFrame, ticker: str) -> pd.DataFrame:
             df[optional_column] = pd.NA
 
     df = df[["time", "open", "high", "low", "close", "volume"]]
-    df = df.dropna(subset=["time", "close"]).sort_values("time").drop_duplicates("time", keep="last")
+    df = df.dropna(subset=["time", "close"])
+    df = _drop_degenerate_ohlc_rows(df, ticker)
+    df = df.sort_values("time").drop_duplicates("time", keep="last")
     df["ticker"] = ticker
     return df.reset_index(drop=True)
 
@@ -220,9 +265,9 @@ def _fetch_ssi_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFram
         "close": pd.to_numeric(raw["close"], errors="coerce") / 1000.0,
         "volume": pd.to_numeric(raw["volume"], errors="coerce"),
     })
-    df = df.dropna(subset=["time", "close"]).sort_values("time").drop_duplicates(
-        "time", keep="last"
-    )
+    df = df.dropna(subset=["time", "close"])
+    df = _drop_degenerate_ohlc_rows(df, ticker)
+    df = df.sort_values("time").drop_duplicates("time", keep="last")
     if df.empty:
         return None
     df["ticker"] = ticker
@@ -319,7 +364,12 @@ def save_metadata_cache(df: pd.DataFrame) -> None:
 def _is_cache_stale(cached_at: pd.Timestamp | None) -> bool:
     if cached_at is None or pd.isna(cached_at):
         return True
-    age = datetime.now() - cached_at.to_pydatetime()
+    cached_dt = cached_at.to_pydatetime()
+    if cached_dt.tzinfo is None:
+        # Legacy entries were written with a naive datetime.now(); treat them
+        # as already-ICT rather than mixing naive/aware in the subtraction.
+        cached_dt = cached_dt.replace(tzinfo=ICT)
+    age = datetime.now(ICT) - cached_dt
     return age > timedelta(days=COMPANY_CACHE_REFRESH_DAYS)
 
 
@@ -354,7 +404,7 @@ def update_metadata_cache(
                     "listed_volume": pd.to_numeric(
                         overview.get("listed_volume"), errors="coerce"
                     ),
-                    "cached_at": datetime.now().isoformat(timespec="seconds"),
+                    "cached_at": datetime.now(ICT).isoformat(timespec="seconds"),
                 }
             )
             logger.info("%s overview cached", candidate.ticker)
@@ -365,7 +415,7 @@ def update_metadata_cache(
                 "exchange": candidate.exchange,
                 "outstanding_shares": pd.NA,
                 "listed_volume": pd.NA,
-                "cached_at": datetime.now().isoformat(timespec="seconds"),
+                "cached_at": datetime.now(ICT).isoformat(timespec="seconds"),
             }
             if cached_row is not None:
                 fallback_row.update(dict(cached_row))

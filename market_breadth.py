@@ -24,6 +24,7 @@ import pandas as pd
 import numpy as np
 
 from vnindex_ex_vin import compute_vnindex_ex_vin
+import vn_trading_calendar
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 EXCEL_PATH = r"C:\Users\DELL\Desktop\vietnam_top100_marketcap_hose_hnx_best_effort.xlsx"
@@ -188,17 +189,25 @@ def verify_fresh_eod_dataset():
             )
         if latest_session < now_ict.date():
             # Refetched after the close, full coverage, yet still no bar for
-            # today: either VN did not trade (a holiday -- the repo carries no
-            # trading calendar to say which) or the upstream source is lagging.
-            # Publish anyway. The chart's "Dữ liệu mới nhất" label is derived
-            # from the data itself so it stays truthful, and aborting would also
-            # freeze the US macro and crypto RS panels that ARE fresh today.
-            log(
-                f"WARNING: dataset was refetched at {newest_fetch.strftime('%H:%M')} ICT but its "
-                f"newest session is {latest_session}, not {now_ict.date()}. VN likely did not "
-                "trade today (holiday), or the upstream source is lagging. Publishing with the "
-                "true data date."
-            )
+            # today. The VN trading calendar tells us whether that's EXPECTED (a
+            # public holiday -- no session today) or a SIGNAL (today is a trading
+            # day but the upstream source is lagging). Publish either way: the
+            # chart's "Dữ liệu mới nhất" label is data-derived so it stays
+            # truthful, and aborting would also freeze the US macro + crypto RS
+            # panels that ARE fresh today. The distinction only changes the log.
+            if not vn_trading_calendar.is_trading_day(now_ict.date()):
+                log(
+                    f"EOD content verified: session {latest_session}, {coverage:.0%} coverage, "
+                    f"fetched {newest_fetch.strftime('%H:%M')} ICT. Today ({now_ict.date()}) is a "
+                    "VN market holiday -- publishing the prior session, as expected."
+                )
+            else:
+                log(
+                    f"WARNING: dataset was refetched at {newest_fetch.strftime('%H:%M')} ICT but its "
+                    f"newest session is {latest_session}, not {now_ict.date()} -- which the VN "
+                    "calendar says IS a trading day. Upstream source is likely lagging. Publishing "
+                    "with the true (older) data date; investigate the feed."
+                )
         else:
             log(
                 f"EOD content verified: session {latest_session}, {coverage:.0%} ticker coverage, "
@@ -744,15 +753,27 @@ def _load_us_index_data(symbol, label, sessions_show, period="1y"):
     # while the US session is still open. close = intraday price, not the real
     # EOD. Drop it so the chart only ever shows completed daily closes. The
     # next scheduled run after US close (06:00 ICT) picks up the real bar.
+    #
+    # C5: treat the bar as final only once the regular 16:00 ET close has passed
+    # plus a short settle margin for the closing-auction print to post. This
+    # (1) stops keeping a not-yet-settled bar at exactly 16:00, and (2) never
+    # drops a bar once the session has settled. US early-close (13:00 ET) half-
+    # days are deliberately NOT special-cased: the repo carries no trading
+    # calendar and a wrong hardcoded close is worse than the rare 13:00-16:00
+    # residual, which the next post-close refresh reconciles.
     if not df.empty:
         try:
             from zoneinfo import ZoneInfo
             now_et = pd.Timestamp.now(tz=ZoneInfo("US/Eastern"))
             last_bar_date = pd.Timestamp(df["time"].iloc[-1]).date()
-            if last_bar_date == now_et.date() and now_et.hour < 16:
+            settle_cutoff = now_et.replace(
+                hour=16, minute=0, second=0, microsecond=0
+            ) + pd.Timedelta(minutes=5)
+            session_settled = now_et >= settle_cutoff
+            if last_bar_date == now_et.date() and not session_settled:
                 log(
-                    f"{label} ({symbol}): dropping in-progress {last_bar_date} bar "
-                    f"(US market still open, ET {now_et.strftime('%H:%M')})"
+                    f"{label} ({symbol}): dropping unsettled {last_bar_date} bar "
+                    f"(before 16:05 ET settle, now ET {now_et.strftime('%H:%M')})"
                 )
                 df = df.iloc[:-1].reset_index(drop=True)
         except Exception as exc:
@@ -761,7 +782,7 @@ def _load_us_index_data(symbol, label, sessions_show, period="1y"):
     return df.tail(sessions_show).reset_index(drop=True)
 
 
-def refresh_intraday_breadth_json(breadth: pd.DataFrame, gcs_bucket: str = "vn-market-breadth") -> None:
+def refresh_intraday_breadth_json(breadth: pd.DataFrame, sample_size=None, gcs_bucket: str = "vn-market-breadth") -> None:
     """Rewrite intraday_breadth.json on GCS to reflect the post-close state.
 
     Chart contract: 49 EOD bars + 1 'latest tick' = 50 points. After the EOD
@@ -787,17 +808,32 @@ def refresh_intraday_breadth_json(breadth: pd.DataFrame, gcs_bucket: str = "vn-m
         log("Skipping intraday_breadth.json refresh: google.cloud.storage unavailable (local run).")
         return
 
-    def _row_to_breadth_dict(row, sample_size_default=100):
+    # C4: real per-session denominator (n_total) instead of a hardcoded 100, so the
+    # close tick and intraday ticks report the same count. Falls back to breadth.attrs
+    # (set by calculate_breadth) when not passed explicitly.
+    if sample_size is None:
+        sample_size = breadth.attrs.get("sample_size")
+
+    def _n_for(date_idx):
+        if sample_size is None:
+            return None
+        try:
+            n = sample_size.get(date_idx)
+        except AttributeError:
+            return None
+        return int(n) if n is not None and not pd.isna(n) else None
+
+    def _row_to_breadth_dict(row, n_total):
         out = {}
         for col in row.index:
             period_token = col[3:].lstrip("0") or "0"
             value = row[col]
             out[f"mbz{period_token}"] = None if pd.isna(value) else float(value)
-        out["sample_size"] = sample_size_default
+        out["sample_size"] = n_total
         return out
 
     today_idx = breadth.index[-1]
-    today_breadth = _row_to_breadth_dict(breadth.iloc[-1])
+    today_breadth = _row_to_breadth_dict(breadth.iloc[-1], _n_for(today_idx))
 
     eod_rows = breadth.iloc[:-1].tail(49)
     eod_history = []
@@ -806,7 +842,7 @@ def refresh_intraday_breadth_json(breadth: pd.DataFrame, gcs_bucket: str = "vn-m
             "kind": "eod",
             "date": date_idx.date().isoformat(),
             "time": date_idx.strftime("%d-%m"),
-            **_row_to_breadth_dict(row),
+            **_row_to_breadth_dict(row, _n_for(date_idx)),
         }
         eod_history.append(entry)
 
@@ -859,7 +895,9 @@ def read_tickers():
         df = pd.read_excel(EXCEL_PATH, header=2)
         tickers = df["Ticker"].dropna().astype(str).str.strip().tolist()
         tickers = [t for t in tickers if t and t != "nan"][:100]
-        log(f"Loaded {len(tickers)} tickers from Excel")
+        # C7: name the resolved source so a local run that silently fell back to a
+        # stale desktop Excel (instead of the checked-in tickers.csv) is visible.
+        log(f"Loaded {len(tickers)} tickers from Excel source: {EXCEL_PATH}")
         return tickers
     except Exception:
         pass
@@ -867,7 +905,7 @@ def read_tickers():
         df = pd.read_csv(csv_path)
         tickers = df["Ticker"].dropna().astype(str).str.strip().tolist()
         tickers = [t for t in tickers if t and t != "nan"][:100]
-        log(f"Loaded {len(tickers)} tickers from tickers.csv (Excel not found)")
+        log(f"Loaded {len(tickers)} tickers from CSV source: {csv_path} (Excel not used)")
         return tickers
     raise FileNotFoundError("No ticker source found. Provide Excel or tickers.csv.")
 
@@ -920,10 +958,38 @@ def calculate_breadth(price_data, sessions_show=50):
     prices = pd.concat(frames, axis=1).sort_index()
     prices.index = pd.to_datetime(prices.index)
 
+    # C3: a ticker whose OWN most recent real bar predates the dataset's latest
+    # session must not be counted in that session's breadth cross-section. Capture
+    # each ticker's last real (pre-ffill) bar date BEFORE gap-filling.
+    latest_session = prices.index.max()
+    last_real_bar = prices.apply(lambda col: col.last_valid_index())
+
     # Forward-fill single-day gaps (VN market sometimes has data gaps)
     prices = prices.ffill(limit=2)
 
+    # C3 (cont.): drop stale tickers from the LATEST session only. ffill(limit=2)
+    # above would otherwise carry a T-1 close into the T column, so during a
+    # partial outage up to ~20% of the top-100 could plot at session T on
+    # yesterday's price. Historical MA windows keep the gap-fill; only the
+    # latest-session membership requires a real latest-session bar. NaN-ing the
+    # price at latest_session also voids that row's SMA for the ticker (a NaN in
+    # the min_periods window), so it leaves both numerator and denominator.
+    stale_latest = [
+        t for t in prices.columns
+        if pd.notna(last_real_bar[t]) and last_real_bar[t] < latest_session
+    ]
+    if stale_latest:
+        prices.loc[latest_session, stale_latest] = np.nan
+        log(
+            f"Breadth: excluded {len(stale_latest)} stale ticker(s) from the "
+            f"{latest_session.date()} cross-section (own latest bar < latest session): "
+            f"{', '.join(sorted(stale_latest))}"
+        )
+    else:
+        log(f"Breadth: 0 stale tickers dropped from the {latest_session.date()} cross-section.")
+
     result_rows = []
+    sample_size = None   # per-session denominator = max n_total across MA windows
     for p in MA_PERIODS:
         sma = prices.rolling(window=p, min_periods=p).mean()
         above = (prices > sma)
@@ -931,9 +997,14 @@ def calculate_breadth(price_data, sessions_show=50):
         n_total = sma.notna().sum(axis=1)   # only count tickers with enough history
         pct = (n_above / n_total.replace(0, np.nan) * 100).round(2)
         result_rows.append(pct.rename(ma_key(p)))
+        sample_size = n_total if sample_size is None else np.maximum(sample_size, n_total)
 
     breadth = pd.concat(result_rows, axis=1).dropna(how="all")
     breadth = breadth.tail(sessions_show)
+    # C4: expose the real per-session denominator (matches intraday_breadth's
+    # sample_size = max n_total across periods) so the 'Đóng cửa' close tick reports
+    # the true count (95-99), not a hardcoded 100, and agrees with intraday ticks.
+    breadth.attrs["sample_size"] = sample_size.reindex(breadth.index)
     return breadth
 
 # ─── STEP 4: Weekly analysis text ────────────────────────────────────────────
@@ -1465,8 +1536,16 @@ def build_html(
     # The drift script still runs and writes logs/universe_drift_*.txt for audit.
     drift_notification_html = ""
 
+    # C2: the session / EOD-settlement date must come from the DATA, not the wall
+    # clock. On the freshness guard's warns-but-publishes branch (holiday/lag, where
+    # latest_session < today) datetime.now(ICT) would assert TODAY while the breadth
+    # is really T-1 — dishonest. Derive it from breadth.index[-1], the same source as
+    # the honest "Dữ liệu mới nhất" label. now_str stays the real-time render/update
+    # stamp (shown under "Cập nhật:"), never used as the settlement date.
+    session_label = (
+        pd.to_datetime(breadth.index[-1]).strftime("%d/%m/%Y") if len(breadth.index) else "—"
+    )
     now_str = datetime.now(ICT).strftime("%d/%m/%Y %H:%M")
-    session_label = datetime.now(ICT).strftime("%d/%m/%Y")
 
     html = f"""<!DOCTYPE html>
 <html lang="vi">
@@ -2571,7 +2650,7 @@ def main():
         # Refresh intraday_breadth.json on GCS so the intraday chart's rightmost
         # point is today's close (not yesterday's last intraday tick) until
         # tomorrow's 09:30 intraday job rolls it forward. No-op on local runs.
-        refresh_intraday_breadth_json(breadth)
+        refresh_intraday_breadth_json(breadth, breadth.attrs.get("sample_size"))
 
         html_size = OUTPUT_HTML.stat().st_size
         last_three_tickers = get_last_three_combined_tickers(combined_path)

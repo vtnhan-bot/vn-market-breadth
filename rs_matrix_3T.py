@@ -110,6 +110,52 @@ def calculate_return_90d(history_df: pd.DataFrame, session_date) -> float:
     return (current_close / base_close) - 1.0
 
 
+def calculate_benchmark_return_90d(history_df: pd.DataFrame, session_date) -> float:
+    """Benchmark 90-day return, tolerant of a single bad base bar.
+
+    Same math as calculate_return_90d, but the base-bar lookup skips any
+    NaN/<=0 close at/just before the cutoff instead of returning NaN. A bad
+    VNINDEX base bar would otherwise blank EVERY ticker's cell for that session
+    (all rows hit `if pd.isna(index_return): continue`). Only the benchmark is
+    hardened here — a single stock nulling its own cell is fine, so the stock
+    path (calculate_return_90d) is intentionally left unchanged.
+    """
+    history_df = history_df.sort_values("time")
+    current_rows = history_df[history_df["time"] == session_date]
+    if current_rows.empty:
+        return np.nan
+
+    current_close = pd.to_numeric(current_rows.iloc[-1]["close"], errors="coerce")
+    if pd.isna(current_close) or current_close <= 0:
+        return np.nan
+
+    base_cutoff = session_date - timedelta(days=RS_LOOKBACK_CALENDAR_DAYS)
+    base_rows = history_df[history_df["time"] <= base_cutoff]
+    if base_rows.empty:
+        return np.nan
+
+    base_closes = pd.to_numeric(base_rows["close"], errors="coerce")
+    valid_base = base_closes[base_closes.notna() & (base_closes > 0)]
+    if valid_base.empty:
+        LOGGER.warning(
+            "Benchmark %s: no valid base bar at/before %s for session %s; "
+            "session column will be blank.",
+            INDEX_TICKER, base_cutoff, session_date,
+        )
+        return np.nan
+
+    base_close = float(valid_base.iloc[-1])
+    naive_base = base_closes.iloc[-1]
+    if pd.isna(naive_base) or naive_base <= 0:
+        LOGGER.warning(
+            "Benchmark %s: base bar at/before %s (session %s) was invalid (%s); "
+            "using nearest valid prior close %.4f instead of blanking the column.",
+            INDEX_TICKER, base_cutoff, session_date, naive_base, base_close,
+        )
+
+    return (current_close / base_close) - 1.0
+
+
 def calculate_weighted_momentum_score(history_df: pd.DataFrame, session_date) -> float:
     """Weighted multi-session momentum, shown as pct above or below 1.0.
 
@@ -155,7 +201,9 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
                 ", ".join(pd.Series(session_dates).astype(str).tolist()))
 
     benchmark_returns = {
-        session_date: calculate_return_90d(benchmark_df, session_date)
+        # tolerant base-bar lookup: a single bad VNINDEX bar must not blank the
+        # whole session column for every ticker (see calculate_benchmark_return_90d).
+        session_date: calculate_benchmark_return_90d(benchmark_df, session_date)
         for session_date in session_dates
     }
 
@@ -239,16 +287,27 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
         .astype("Int64")
     )
 
-    latest_session = matrix_df["session_date"].max()
+    # Per-ticker latest rating keyed on each ticker's OWN most-recent session
+    # that has a real rs_rating -- NOT the global latest session. A ticker
+    # halted on the latest session (e.g. STG/CRV) is absent from that session's
+    # slice, so keying on the global latest alone gives it latest_rs_rating=NaN
+    # and sinks its entire 20-session row to the bottom of the heatmap.
     latest_scores = (
-        matrix_df[matrix_df["session_date"] == latest_session][["ticker", "rs_rating"]]
+        matrix_df[matrix_df["rs_rating"].notna()]
+        .sort_values("session_date")
+        .drop_duplicates("ticker", keep="last")[["ticker", "rs_rating"]]
         .rename(columns={"rs_rating": "latest_rs_rating"})
     )
     matrix_df = matrix_df.merge(latest_scores, on="ticker", how="left")
+    # Sort-only helper: 59/229 tickers have NaN market_cap. Coalesce to 0 so a
+    # rating tie breaks by cap deterministically instead of relying on pandas'
+    # na_position handling; NOT written to the CSV (market_cap value preserved).
+    matrix_df["_market_cap_sort"] = matrix_df["market_cap"].fillna(0)
     matrix_df = matrix_df.sort_values(
-        ["latest_rs_rating", "market_cap", "universe_order", "ticker", "session_date"],
+        ["latest_rs_rating", "_market_cap_sort", "universe_order", "ticker", "session_date"],
         ascending=[False, False, True, True, True],
     ).reset_index(drop=True)
+    matrix_df = matrix_df.drop(columns=["_market_cap_sort"])
 
     matrix_df.to_csv(RS_MATRIX_3T_PATH, index=False, encoding="utf-8-sig")
     LOGGER.info(
@@ -278,8 +337,10 @@ def main() -> None:
     matrix_df = build_rs_matrix(universe_df, combined_path)
     latest_session = pd.to_datetime(matrix_df["session_date"]).max().date().isoformat()
     leader_slice = matrix_df[matrix_df["session_date"] == pd.to_datetime(latest_session).date()]
+    # Coalesce NaN market_cap to 0 for the cap tie-break (see build_rs_matrix sort).
     leaders = (
-        leader_slice.sort_values(["rs_rating", "market_cap", "ticker"], ascending=[False, False, True])[
+        leader_slice.assign(_market_cap_sort=leader_slice["market_cap"].fillna(0))
+        .sort_values(["rs_rating", "_market_cap_sort", "ticker"], ascending=[False, False, True])[
             "ticker"
         ]
         .head(10)

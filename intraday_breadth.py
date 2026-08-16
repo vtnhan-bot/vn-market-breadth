@@ -25,6 +25,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import vn_trading_calendar
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TICKERS_FILE = SCRIPT_DIR / "tickers.csv"
@@ -68,7 +70,10 @@ def configure_logging() -> None:
 
 
 def is_trading_window(now_ict: datetime) -> bool:
-    if now_ict.weekday() >= 5:  # Saturday=5, Sunday=6
+    # VN market: weekday, inside a session window, and not a public holiday.
+    # The holiday check is a hint (the data-driven freshness guard in main() is
+    # the real gate); on a listed holiday we skip the whole tick outright.
+    if not vn_trading_calendar.is_trading_day(now_ict.date()):
         return False
     t = now_ict.time()
     if MORNING_START <= t <= MORNING_END:
@@ -76,6 +81,29 @@ def is_trading_window(now_ict: datetime) -> bool:
     if AFTERNOON_START <= t <= AFTERNOON_END:
         return True
     return False
+
+
+def _expected_prev_trading_day(now_ict: datetime):
+    """Previous VN trading day before today, per the HOSE calendar.
+
+    Uses vn_trading_calendar (weekends + public holidays) so the C1(a) stale-
+    anchor guard expects the CORRECT prior session the morning after a mid-week
+    holiday (e.g. Sep 3, after the Aug 31-Sep 2 National Day break, expects
+    Aug 28 -- not Sep 2), instead of over-suppressing the intraday chart. For a
+    year the calendar does not yet cover authoritatively it falls back to
+    weekend-only, which fails closed (over-suppresses) rather than publishing a
+    stale anchor -- see vn_trading_calendar's safety model. A one-time WARNING
+    prompts the yearly HOSE-notice update.
+    """
+    today = now_ict.date()
+    if not vn_trading_calendar.is_year_authoritative(today.year):
+        LOGGER.warning(
+            "VN trading calendar has no authoritative data for %s; previous-trading-day "
+            "uses a best-effort/weekend approximation. Update vn_trading_calendar.py from "
+            "HOSE's %s notice.",
+            today.year, today.year,
+        )
+    return vn_trading_calendar.previous_trading_day(today)
 
 
 def read_top100_tickers() -> list[str]:
@@ -100,12 +128,13 @@ def fetch_current_prices(tickers: list[str]) -> dict[str, float]:
     limited to SSI's ~1 req/sec inside ssi_client. Same contract as before:
     UPPER-cased keys, prices already divided by 1000 (PRICE_DIVISOR applied in
     ssi_client). Symbols with no bar yet (pre-open/halted) are skipped there.
+
+    An empty result (e.g. a weekday public holiday, when SSI has no bar for today)
+    is returned as-is, not raised: main() treats a sub-quorum result as the C1(b)
+    fail-closed "market did not trade today" signal and skips the tick.
     """
     from ssi_client import get_current_prices
-    out = get_current_prices(tickers)
-    if not out:
-        raise RuntimeError("SSI price source returned no rows")
-    return out
+    return get_current_prices(tickers)
 
 
 def download_combined_dataset(local_dst: Path) -> Path:
@@ -330,13 +359,51 @@ def main() -> int:
         TICKERS_FILE.name,
     )
 
+    # C1(a) — STALE ANCHOR guard (fail-closed). The intraday tick compares live
+    # prices against SMAs frozen at the EOD anchor frame's last session. That
+    # session MUST be the expected previous trading day; a T-2 anchor (a failed or
+    # partial EOD refresh, or run_intraday.sh picking an mtime-newest-but-older
+    # base file — the intraday twin of the EOD stale-dashboard bug) would otherwise
+    # publish a fresh-looking line against two-day-old SMAs. Never publish stale.
+    anchor_prices = _build_eod_prices_frame(combined_local, top100)
+    if anchor_prices.empty:
+        LOGGER.warning(
+            "Anchor frame empty (no top-100 SMA history) — cannot validate freshness. "
+            "Skipping tick (fail-closed); not publishing."
+        )
+        return 0
+    anchor_last = anchor_prices.index[-1].date()
+    expected_prev = _expected_prev_trading_day(now_ict)
+    if anchor_last != expected_prev:
+        LOGGER.warning(
+            "STALE ANCHOR: SMA anchor's last session is %s but the expected previous "
+            "trading day is %s. Skipping tick (fail-closed) rather than anchoring a live "
+            "line to stale SMAs. The 07:30 EOD run refreshes the anchor before the next "
+            "intraday window.",
+            anchor_last, expected_prev,
+        )
+        return 0
+    LOGGER.info(
+        "Anchor OK: SMA anchor last session %s == expected previous trading day.",
+        anchor_last,
+    )
+
     LOGGER.info("Fetching current prices via SSI FastConnect ...")
     current = fetch_current_prices(top100)
     LOGGER.info("Got prices for %d/%d tickers", len(current), len(top100))
+    # C1(b) — HOLIDAY / non-trading suppression (fail-closed). SSI's intraday_ohlc
+    # is queried for TODAY only, so a live-price quorum is itself the "market traded
+    # today" signal: on a weekday public holiday SSI returns no bars for today and we
+    # must not publish a moving line for a closed market. is_trading_window already
+    # gated weekday + session time above; require a real quorum on top of it.
     if len(current) < TOP_N // 2:
-        raise RuntimeError(
-            f"Only {len(current)} of {TOP_N} prices fetched — refusing to update breadth"
+        LOGGER.warning(
+            "Only %d/%d live prices — below the %d quorum. The market likely did not trade "
+            "today (holiday) or SSI is unavailable. Skipping tick (fail-closed); not "
+            "publishing a fresh-looking tick for a closed/partial session.",
+            len(current), TOP_N, TOP_N // 2,
         )
+        return 0
 
     breadth = compute_breadth(combined_local, top100, current)
     LOGGER.info(

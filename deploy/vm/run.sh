@@ -46,24 +46,21 @@ r2pub() { # r2pub <local_path> <key> <content_type>
 }
 
 OUT="$APP/market_breadth.html"
-if [ -s "$OUT" ]; then
-  if "$GSUTIL" -h "$NOCACHE" -h "Content-Type:text/html" cp "$OUT" "gs://$BUCKET/index.html"; then
-    echo "[$(ts)] published index.html"
-    r2pub "$OUT" "index.html" "text/html" || true
-  else
-    echo "[$(ts)] ERROR: index.html publish failed"; fail=1
-  fi
-else
-  echo "[$(ts)] ERROR: no market_breadth.html on disk to publish"; fail=1
-fi
 
+# Transactional publish: data objects FIRST, index.html LAST. The dashboard's HTML
+# must never go live ahead of the data objects it references, and a partial publish
+# must not masquerade as success -- EVERY gsutil cp failure sets fail=1 (the rc-gate
+# above already proved the build itself succeeded). The R2 mirror stays best-effort
+# (`|| true`) and can never flip $fail.
+
+# combined_dataset.csv (intraday SMA seed).
 LATEST_CDS=$(ls -1 "$APP"/data/*/combined_dataset.csv 2>/dev/null | sort | tail -n1)
 if [ -n "$LATEST_CDS" ] && [ -s "$LATEST_CDS" ]; then
   if "$GSUTIL" -h "$NOCACHE" -h "Content-Type:text/csv" cp "$LATEST_CDS" "gs://$BUCKET/intraday/combined_dataset.csv"; then
     echo "[$(ts)] persisted intraday/combined_dataset.csv from $LATEST_CDS"
     r2pub "$LATEST_CDS" "intraday/combined_dataset.csv" "text/csv" || true
   else
-    echo "[$(ts)] WARN: combined_dataset.csv publish failed"
+    echo "[$(ts)] ERROR: combined_dataset.csv publish failed"; fail=1
   fi
 else
   echo "[$(ts)] WARN: no combined_dataset.csv under data/*/ - skipping"
@@ -74,10 +71,25 @@ for f in rs_matrix_3T.csv rs_matrix_crypto.csv; do
       echo "[$(ts)] persisted intraday/$f"
       r2pub "$APP/$f" "intraday/$f" "text/csv" || true
     else
-      echo "[$(ts)] WARN: $f publish failed"
+      echo "[$(ts)] ERROR: $f publish failed"; fail=1
     fi
   fi
 done
+
+# index.html LAST, and only once every data object above published cleanly, so the
+# page never references data that failed to go live.
+if [ "$fail" -ne 0 ]; then
+  echo "[$(ts)] ERROR: a data object failed to publish - NOT publishing index.html (keeping the live page consistent with its data)"
+elif [ -s "$OUT" ]; then
+  if "$GSUTIL" -h "$NOCACHE" -h "Content-Type:text/html" cp "$OUT" "gs://$BUCKET/index.html"; then
+    echo "[$(ts)] published index.html"
+    r2pub "$OUT" "index.html" "text/html" || true
+  else
+    echo "[$(ts)] ERROR: index.html publish failed"; fail=1
+  fi
+else
+  echo "[$(ts)] ERROR: no market_breadth.html on disk to publish"; fail=1
+fi
 
 echo "[$(ts)] === done (build rc=$rc, publish fail=$fail) | https://storage.googleapis.com/$BUCKET/index.html ==="
 exit "$fail"

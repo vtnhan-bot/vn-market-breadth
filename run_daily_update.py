@@ -7,14 +7,16 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
+ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 def emit(message: str, log_handle) -> None:
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(ICT).strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {message}"
     try:
         print(line, flush=True)
@@ -66,7 +68,7 @@ def main() -> int:
             pass
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    run_date = datetime.now().strftime("%Y-%m-%d")
+    run_date = datetime.now(ICT).strftime("%Y-%m-%d")
     log_path = LOG_DIR / f"daily_run_{run_date}.log"
 
     with open(log_path, "a", encoding="utf-8") as log_handle:

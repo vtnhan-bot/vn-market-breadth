@@ -125,6 +125,9 @@ def _compute_return_90d(history: pd.DataFrame, intraday_price: float, today: "da
     """
     if intraday_price is None or pd.isna(intraday_price) or intraday_price <= 0:
         return np.nan
+    # Exclude today's (partial) bar if the EOD pipeline has already appended it,
+    # mirroring _ref_close_from_history — the base must be a CLOSED session.
+    history = history[history["time"] < today]
     base_cutoff = today - timedelta(days=RS_LOOKBACK_CALENDAR_DAYS)
     base_rows = history[history["time"] <= base_cutoff]
     if base_rows.empty:
@@ -135,7 +138,7 @@ def _compute_return_90d(history: pd.DataFrame, intraday_price: float, today: "da
     return (intraday_price / base_close) - 1.0
 
 
-def _compute_weighted_momentum(history: pd.DataFrame, intraday_price: float) -> float:
+def _compute_weighted_momentum(history: pd.DataFrame, intraday_price: float, today: "datetime.date") -> float:
     """Weighted multi-session momentum vs the live intraday price. Matches
     rs_matrix_3T.calculate_weighted_momentum_score with intraday_price as
     'current_close'. Windows = RS_MOMENTUM_WINDOWS (3/5/10 @ 50/30/20). Note the
@@ -144,6 +147,10 @@ def _compute_weighted_momentum(history: pd.DataFrame, intraday_price: float) -> 
     """
     if intraday_price is None or pd.isna(intraday_price) or intraday_price <= 0:
         return np.nan
+    # Enforce the "without today's bar" precondition the docstring assumes: drop
+    # today's partial bar if the EOD pipeline has already appended it, else
+    # iloc[-lookback] would be one session too recent (mirror _ref_close_from_history).
+    history = history[history["time"] < today]
     if len(history) < max(lb for lb, _ in RS_MOMENTUM_WINDOWS):
         return np.nan
     weighted_ratio = 0.0
@@ -194,8 +201,10 @@ def compute_intraday_rs(combined_path: Path, now_ict: datetime) -> dict | None:
         ref_px = _ref_close_from_history(hist, today)
 
         stock_ret_90d = _compute_return_90d(hist, intraday_px, today)
-        wm_score = _compute_weighted_momentum(hist, intraday_px)
-        if pd.isna(stock_ret_90d) and pd.isna(wm_score):
+        wm_score = _compute_weighted_momentum(hist, intraday_px, today)
+        # Match EOD (rs_matrix_3T) exactly: drop the row only when the stock
+        # return is NaN; a NaN momentum is kept and yields a NaN (blank) rating.
+        if pd.isna(stock_ret_90d):
             continue
         daily_change_pct = (
             (intraday_px / ref_px - 1.0) * 100.0
@@ -223,9 +232,13 @@ def compute_intraday_rs(combined_path: Path, now_ict: datetime) -> dict | None:
     df = pd.DataFrame(rows)
     df["rs_pct"] = df["stock_return_90d"].rank(method="average", pct=True)
     df["weighted_momentum_pct"] = df["weighted_momentum_score"].rank(method="average", pct=True)
+    # No .fillna(0.0): match EOD blend semantics exactly. rs_pct is always
+    # defined here (rows with NaN stock_return were already dropped); a NaN
+    # weighted_momentum_pct propagates to a NaN blended score -> NaN rating
+    # (blank cell), the same as rs_matrix_3T.
     df["rs_pct_blended"] = (
-        RS_BLEND_RS_WEIGHT * df["rs_pct"].fillna(0.0)
-        + (1.0 - RS_BLEND_RS_WEIGHT) * df["weighted_momentum_pct"].fillna(0.0)
+        RS_BLEND_RS_WEIGHT * df["rs_pct"]
+        + (1.0 - RS_BLEND_RS_WEIGHT) * df["weighted_momentum_pct"]
     )
     df["rs_rating"] = (
         ((df["rs_pct_blended"] * 98) + 1).round().clip(1, 99).astype("Int64")
