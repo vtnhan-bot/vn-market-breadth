@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import liquidity_screen
 from rs_source2 import (
     INDEX_TICKER,
     RS_BLEND_RS_WEIGHT,
@@ -29,6 +30,9 @@ from rs_source2 import (
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 RS_MATRIX_3T_PATH = SCRIPT_DIR / "rs_matrix_3T.csv"
+# Kept/dropped membership from the liquidity screen. Written here (EOD), re-read by
+# intraday_rs_3T (parity) and market_breadth (alignment audit). See liquidity_screen.
+RS_SCREEN_MEMBERS_PATH = SCRIPT_DIR / "rs_screen_members.csv"
 
 LOGGER = configure_logging("rs_matrix_3t")
 
@@ -206,6 +210,48 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
         session_date: calculate_benchmark_return_90d(benchmark_df, session_date)
         for session_date in session_dates
     }
+
+    # --- Liquidity screen -----------------------------------------------------
+    # Drop illiquid names from the RANK cohort so the heatmap carries no blank
+    # cells / no low-quality tickers, and persist the membership so intraday_rs_3T
+    # ranks over the IDENTICAL set (parity) and market_breadth's alignment audit
+    # can expect the screened subset. FAIL-SAFE: if the screen would keep too few
+    # (e.g. a volume-feed regression), keep the FULL universe and leave the prior
+    # members file untouched -- an illiquid name beats blanking or a 95-ticker abort.
+    screen_df = combined_df[["ticker", "time", "close", "volume"]].copy()
+    screen_df["time"] = pd.to_datetime(screen_df["time"], errors="coerce").dt.date
+    screen_sessions = benchmark_dates[-liquidity_screen.SCREEN_WINDOW:]
+    prior_members = liquidity_screen.read_kept_members(RS_SCREEN_MEMBERS_PATH)
+    kept, dropped, screen_stats = liquidity_screen.screen_universe(
+        screen_df, universe_df["ticker"].tolist(), screen_sessions, prior_members=prior_members,
+    )
+    if len(kept) < liquidity_screen.FAILSAFE_MIN_KEPT:
+        # Something is wrong (e.g. a volume-feed regression). Keep the FULL universe
+        # AND write an all-kept membership so market_breadth + intraday also fall
+        # back to full this run -- otherwise they would screen against a stale prior
+        # members file and disagree with the (now-full) matrix.
+        LOGGER.error(
+            "Liquidity screen kept only %s (< %s floor) -- FAILING SAFE to the full universe "
+            "this run (all-kept membership written).",
+            len(kept), liquidity_screen.FAILSAFE_MIN_KEPT,
+        )
+        failsafe_stats = screen_stats.copy()
+        failsafe_stats["status"] = "kept"
+        liquidity_screen.write_members(
+            RS_SCREEN_MEMBERS_PATH, failsafe_stats, screened_at=str(session_dates[-1]),
+        )
+    else:
+        liquidity_screen.write_members(
+            RS_SCREEN_MEMBERS_PATH, screen_stats, screened_at=str(session_dates[-1]),
+        )
+        if dropped:
+            LOGGER.info(
+                "Liquidity screen: kept %s, dropped %s illiquid -> %s",
+                len(kept), len(dropped), ", ".join(sorted(dropped)),
+            )
+        else:
+            LOGGER.info("Liquidity screen: kept %s, dropped 0.", len(kept))
+        universe_df = universe_df[universe_df["ticker"].isin(set(kept))].reset_index(drop=True)
 
     all_rows: list[dict] = []
     failed_tickers: list[str] = []

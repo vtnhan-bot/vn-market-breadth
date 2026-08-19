@@ -25,6 +25,7 @@ import numpy as np
 
 from vnindex_ex_vin import compute_vnindex_ex_vin
 import vn_trading_calendar
+import liquidity_screen
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 EXCEL_PATH = r"C:\Users\DELL\Desktop\vietnam_top100_marketcap_hose_hnx_best_effort.xlsx"
@@ -54,6 +55,7 @@ INDEX_TICKER = "VNINDEX"
 INSTITUTIONAL_UNIVERSE_3T_PATH = SCRIPT_DIR / "institutional_universe_3T.csv"
 RS_FIXED_TICKERS_PATH = SCRIPT_DIR / "rs_fixed_tickers.csv"
 RS_MATRIX_3T_PATH = SCRIPT_DIR / "rs_matrix_3T.csv"
+RS_SCREEN_MEMBERS_PATH = SCRIPT_DIR / "rs_screen_members.csv"  # liquidity-screen membership
 CRYPTO_UNIVERSE_PATH = SCRIPT_DIR / "crypto_universe.csv"
 RS_MATRIX_CRYPTO_PATH = SCRIPT_DIR / "rs_matrix_crypto.csv"
 UNIVERSE_DRIFT_LATEST_PATH = SCRIPT_DIR / "logs" / "universe_drift_latest.txt"
@@ -265,6 +267,18 @@ def load_fixed_rs_universe():
     fixed_df["ticker"] = fixed_df["ticker"].astype(str).str.upper().str.strip()
     fixed_df["market_cap"] = pd.to_numeric(fixed_df.get("market_cap"), errors="coerce")
     fixed_df = fixed_df.drop_duplicates(subset=["ticker"], keep="first").reset_index(drop=True)
+
+    # Reconcile with the liquidity screen: the RS matrix is built over the KEPT
+    # (liquid) subset, so the "expected" universe for the alignment audit, the
+    # "(N CP)" count, and the display order must match -- otherwise every screened
+    # name logs as "[AUDIT] Missing from final matrix" and appears as a blank row.
+    # FAIL SAFE: no/empty members file -> keep the full universe (current behavior).
+    kept = liquidity_screen.read_kept_members(RS_SCREEN_MEMBERS_PATH)
+    if kept:
+        screened = fixed_df[fixed_df["ticker"].isin(kept)].reset_index(drop=True)
+        if not screened.empty:
+            fixed_df = screened
+
     fixed_df["universe_order"] = np.arange(1, len(fixed_df) + 1)
     return fixed_df
 
@@ -888,26 +902,63 @@ def load_us_nasdaq_index_data(sessions_show=US_INDEX_SESSIONS):
 def load_us_dxy_index_data(sessions_show=DXY_SESSIONS):
     return _load_us_index_data("DX-Y.NYB", "US Dollar Index (DXY)", sessions_show, period="1y")
 
-# ─── STEP 1: Read tickers (Excel if available, else CSV fallback) ─────────────
+# ─── STEP 1: Read tickers (versioned tickers.csv first, Excel last-resort) ────
 def read_tickers():
+    # tickers.csv is the version-controlled source of truth for the top-100 breadth
+    # cohort -- the downloader and intraday engines already read it. Prefer it over
+    # the local desktop Excel, which is unversioned, absent on the VM, and drifts out
+    # of sync (a stale Excel silently shadowed an updated tickers.csv before this).
     csv_path = SCRIPT_DIR / "tickers.csv"
-    try:
-        df = pd.read_excel(EXCEL_PATH, header=2)
-        tickers = df["Ticker"].dropna().astype(str).str.strip().tolist()
-        tickers = [t for t in tickers if t and t != "nan"][:100]
-        # C7: name the resolved source so a local run that silently fell back to a
-        # stale desktop Excel (instead of the checked-in tickers.csv) is visible.
-        log(f"Loaded {len(tickers)} tickers from Excel source: {EXCEL_PATH}")
-        return tickers
-    except Exception:
-        pass
     if csv_path.exists():
         df = pd.read_csv(csv_path)
         tickers = df["Ticker"].dropna().astype(str).str.strip().tolist()
         tickers = [t for t in tickers if t and t != "nan"][:100]
-        log(f"Loaded {len(tickers)} tickers from CSV source: {csv_path} (Excel not used)")
+        log(f"Loaded {len(tickers)} tickers from tickers.csv")
         return tickers
-    raise FileNotFoundError("No ticker source found. Provide Excel or tickers.csv.")
+    # Last-resort fallback: the desktop Excel (a dev box with no checked-out csv).
+    try:
+        df = pd.read_excel(EXCEL_PATH, header=2)
+        tickers = df["Ticker"].dropna().astype(str).str.strip().tolist()
+        tickers = [t for t in tickers if t and t != "nan"][:100]
+        log(f"WARNING: tickers.csv not found; loaded {len(tickers)} tickers from stale Excel {EXCEL_PATH}")
+        return tickers
+    except Exception:
+        pass
+    raise FileNotFoundError("No ticker source found. Provide tickers.csv or Excel.")
+
+
+def warn_illiquid_breadth_names(top100_tickers):
+    """Advisory ONLY: flag top-100 breadth names the liquidity screen would drop.
+
+    Never mutates the breadth cohort -- dropping a plotted name would push
+    describe_eod_dataset coverage below MIN_LATEST_SESSION_COVERAGE and abort the
+    whole publish. Breadth is a subset of the RS universe, so the EOD screen has
+    already scored every top-100 name into rs_screen_members.csv; this just reads
+    those stats and logs a swap suggestion. No-op if the file is absent.
+    """
+    try:
+        stats = pd.read_csv(RS_SCREEN_MEMBERS_PATH, encoding="utf-8-sig")
+    except Exception:
+        return
+    if stats.empty or "ticker" not in stats.columns:
+        return
+    stats["ticker"] = stats["ticker"].astype(str).str.upper().str.strip()
+    top = {str(t).upper().strip() for t in top100_tickers}
+    flagged = stats[
+        stats["ticker"].isin(top)
+        & (stats["status"] != "coldstart")
+        & (
+            (stats["status"] == "dropped")
+            | (stats["coverage"] < liquidity_screen.KEEP_MIN_COVERAGE)
+            | (stats["median_adv_vnd"] < liquidity_screen.KEEP_MIN_ADV_VND)
+        )
+    ]
+    for _, r in flagged.iterrows():
+        log(
+            f"WARNING: breadth top-100 name {r['ticker']} is illiquid "
+            f"(coverage={float(r['coverage']):.0%}, ADV={float(r['median_adv_vnd'])/1e9:.2f} "
+            "bn VND/day) -- consider swapping it out of tickers.csv."
+        )
 
 # ─── STEP 2: Fetch price data with caching ───────────────────────────────────
 AUDIT_DIR.mkdir(exist_ok=True)
@@ -2456,6 +2507,7 @@ def main():
             f"{combined_path} | modified {combined_modified_at.strftime('%d/%m/%Y %H:%M:%S %Z')}"
         )
         tickers = read_tickers()
+        warn_illiquid_breadth_names(tickers)
         combined_df, price_data, provider_label, vnindex_df = load_price_data_from_combined_dataset(combined_path)
         active_tickers = sorted(price_data.keys())
         failed_tickers = [ticker for ticker in tickers if ticker not in price_data]

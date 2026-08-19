@@ -42,8 +42,11 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
+import liquidity_screen  # leaf module (pandas/numpy only) -- safe on the 15-min tick
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 RS_UNIVERSE_PATH = SCRIPT_DIR / "rs_fixed_tickers.csv"
+RS_SCREEN_MEMBERS_PATH = SCRIPT_DIR / "rs_screen_members.csv"
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 
 GCS_BUCKET = os.environ.get("INTRADAY_GCS_BUCKET", "vn-market-breadth")
@@ -64,7 +67,22 @@ LOGGER = logging.getLogger("intraday_rs_3T")
 def _load_rs_universe() -> list[str]:
     df = pd.read_csv(RS_UNIVERSE_PATH, encoding="utf-8-sig")
     tickers = [str(t).strip().upper() for t in df["ticker"].tolist() if pd.notna(t)]
-    return [t for t in tickers if t and t.lower() != "nan"]
+    tickers = [t for t in tickers if t and t.lower() != "nan"]
+    # Rank over the liquid membership the LAST EOD build screened to (read from the
+    # shared members file), so the live HH:MM heatmap ranks over the same cohort the
+    # settled heatmap did. Do NOT recompute liquidity here (the tick must stay cheap
+    # and volume isn't fetched intraday). Note: membership can shift by a name at the
+    # 07:30->15:15 boundary as the 60-session window rolls, so a session's last live
+    # tick and its settled 15:15 heatmap may differ by one name -- hysteresis makes
+    # this rare and the settled build is authoritative. FAIL SAFE: missing/empty
+    # members file -> full universe, never an empty screen.
+    kept = liquidity_screen.read_kept_members(RS_SCREEN_MEMBERS_PATH)
+    if kept:
+        screened = [t for t in tickers if t in kept]
+        if screened:
+            return screened
+        LOGGER.warning("Screen membership yielded no overlap with the universe; using full universe.")
+    return tickers
 
 
 def _load_history_frame(combined_path: Path, tickers: list[str]) -> pd.DataFrame:
