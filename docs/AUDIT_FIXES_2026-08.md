@@ -135,7 +135,53 @@ Cointrading has **no git repo** (user chose to leave it) — the change lives on
 - **taker_split retention** → 30 days (done, §6).
 - **₫1 budget** → delete + rename (found already done by the user's own concurrent rework, §5).
 
-## 8. Open threads
+## 8. Universe liquidity cleanup (commit `3678c5b`)
+
+The RS heatmap showed blank cells (e.g. CRV on Aug 18). **Root cause verified: genuine no-trade days** —
+illiquid stocks with no price bar on some sessions (both SSI *and* vnstock agree; the new OHLC filter dropped
+nothing). Rather than paper over the gaps, the low-quality names were pruned (user's call). Liquidity review
+over 60 sessions (coverage = fraction of sessions traded; ADV = median daily value traded, universe median
+12.8 bn VND). **Removed 36 of 230** from `rs_fixed_tickers.csv` → **194**:
+
+- **Tier 1 (14, don't trade every session — the blank-makers):** LGC (0% coverage), CRV, STG, HNA, PTI, TMS,
+  VCF, BHN, ACG, PDN, DTK, VSH, AST, TDM.
+- **Tier 2 (22, trade daily but < 1 bn VND/day turnover):** BAB, CDN, SHP, PGV, VIF, TRA, DSC, DHT, IMP, SAM,
+  DHG, IPA, MCM, TNH, BIC, DBD, NTC, HAX, TTF, FIT, BMI, PPC.
+
+**Breadth top-100** (`tickers.csv`): removed the 6 illiquid overlaps (LGC, CRV, VSH, BAB, PGV, DHG) and
+backfilled with the 6 largest **liquid** non-top-100 names — GEL, HPA, DSE, HSG, BWE, CEO (all 100% coverage,
+ADV ≥ 1 bn). Also pruned the same names from `institutional_universe_3T.csv` (the manual `--sync-universe`
+source, a static hand-committed snapshot — nothing auto-regenerates it) so a re-sync can't re-add them.
+Verified live: 194×20 heatmap with **0 blank cells**. Rollback `/opt/market-breadth/.rollback-20260820-universe`.
+
+## 9. Automated liquidity screen + read_tickers CSV-first (commit `675bf19`)
+
+So low-quality names **never re-enter / never blank the heatmap** without hand-editing the universe again.
+
+- **read_tickers** (`market_breadth.py`) now reads the versioned `tickers.csv` FIRST (Excel demoted to
+  last-resort) — production already used tickers.csv; this makes local runs agree instead of silently using a
+  stale desktop Excel.
+- **`liquidity_screen.py`** (NEW; pandas/numpy-only **leaf** — must never import `rs_source2`/vnstock so the
+  15-min intraday tick stays cheap): `screen_universe()` computes per ticker over the benchmark's last 60
+  sessions — **coverage** (traded sessions / sessions-since-listing; close≤0 or NaN/0-volume = MISSING) and
+  **median ADV** (close·volume·1000 VND). **Hysteresis** (enter ≥0.98/1 bn, drop only <0.95/0.8 bn) stops
+  day-to-day churn; **coldstart** exempts a genuinely NEW listing (< 20 window sessions since first bar) but an
+  OLD rarely-trading name — or a totally-absent one — is DROPPED.
+- Wiring: `rs_matrix_3T.build_rs_matrix` screens the cohort before building and writes **`rs_screen_members.csv`**
+  (generated, **gitignored**); `intraday_rs_3T._load_rs_universe` re-reads that same file (never recomputes)
+  for EOD↔intraday parity; `market_breadth.load_fixed_rs_universe` filters to the kept-set so the alignment
+  AUDIT / "(N CP)" count / display order expect the screened subset (no false "Missing"); `warn_illiquid_breadth_names`
+  **warns but never drops** a top-100 breadth name (dropping one would trip the 0.80-coverage abort).
+- **FAIL-SAFE** everywhere: a missing/empty members file → every consumer uses the FULL universe; if the screen
+  would keep < 120 (a volume-feed regression) `build_rs_matrix` keeps full AND writes an all-kept membership so
+  the consumers coordinate to full. **The screen is a RENDER-TIME filter** — the locked `rs_fixed_tickers.csv`
+  is the candidate list, and the screen is now the ongoing guard that supersedes the manual §8 curation.
+
+Since the universe was already curated to 194 liquid names, the screen is a **day-1 no-op** (kept 194, dropped
+0, AUDIT SUCCESS — verified live) that then auto-catches future drift. Adversarial QA passed (2 dormant gaps —
+coldstart over-exemption, fail-safe coordination — both fixed here). Rollback `.rollback-20260820-screen`.
+
+## 10. Open threads
 
 1. **R2 cutover — the only substantive open item.** Blocked on a Cloudflare account: needs Account ID +
    Access Key ID + Secret, then the `pub-*.r2.dev` URL. `r2_publish.py` + `run.sh`'s `r2pub` leg are in the
