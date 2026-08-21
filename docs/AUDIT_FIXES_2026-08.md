@@ -247,9 +247,13 @@ render + compute_breadth against the live dataset, no publish; local unit tests 
    fall back to full THIS run (parity preserved, identical to before) AND next run's `prior_members=None` re-applies
    the strict ENTRY band. Rare trigger, bounded leak — now closed.
 
-**Meta-finding (unfixed, highest-leverage):** the repo has **zero automated tests** for any of this data logic —
-every invariant is enforced only by inline code + comments. A golden-fixture suite would have caught all 5 of
-these AND the prior 2.5-week T‑1 stale bug.
+**Meta-finding (now ADDRESSED, `adfbc22`):** the repo had **zero automated tests** for this data logic —
+every invariant was enforced only by inline code + comments. Added a hermetic pytest suite (`tests/`, ~2s,
+synthetic fixtures, no network) that locks all five fixed invariants + the two-band liquidity screen +
+DNSE per-source scale + the T‑1 stale-publish freshness guard, wired into `validate.yml` as a `test` job on
+every push/PR (CI-path modules import with only pandas/numpy/requests; the vnstock-gated ingestion tests
+import-skip in CI, run locally — 16 pass locally / 13 in CI). Plus two warn-only render-time guards in
+`market_breadth.py` (VNINDEX candle magnitude band; `generate_analysis` universe > 100) as defence-in-depth.
 
 ## 12. Open threads
 
