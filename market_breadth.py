@@ -1140,6 +1140,13 @@ def generate_analysis(breadth, price_data):
     else:
         next_week = "Tuần tới: Cả ngắn hạn và trung hạn đều yếu → giữ tỷ trọng thấp, chờ xác nhận đảo chiều."
 
+    # Defence-in-depth: n_tickers is the published breadth universe count and must
+    # be the top-100 cohort, not the ~194-name RS fetch universe. Warn (never raise)
+    # if a caller passes the full universe again. Locked by tests/test_dashboard_render.py.
+    if len(price_data) > 100:
+        log(f"[SANITY] generate_analysis universe = {len(price_data)} > 100; expected the "
+            f"top-100 breadth cohort -- the n_tickers label would overstate the universe.")
+
     return {
         "rows": rows,
         "composite": composite,
@@ -1210,6 +1217,14 @@ def build_html(
             "increasing": {"line": {"color": "#43A047"}, "fillcolor": "#43A047"},
             "decreasing": {"line": {"color": "#E53935"}, "fillcolor": "#E53935"},
         }
+        # Defence-in-depth: the candle must render real points (~hundreds-thousands),
+        # matching the ex-Vin panel. If it slips back to thousand-points (~1.9) the
+        # median falls out of band -- warn (never raise: a false trip must not block
+        # the publish). Locked by tests/test_dashboard_render.py.
+        _vni_med = pd.Series([c for c in candle["close"] if c is not None]).median()
+        if pd.notna(_vni_med) and (_vni_med < 100 or _vni_med > 100_000):
+            log(f"[SANITY] VNINDEX candlestick median {_vni_med:.1f} outside [100, 100000] "
+                f"points -- possible x1000 scale regression.")
         colors = ["#43A047" if c >= o else "#E53935"
                   for c, o in zip(vni["close"], vni["open"])]
         vol_bar = {

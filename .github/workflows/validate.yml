@@ -39,3 +39,25 @@ jobs:
             grep -q '^\[' "$f" || { echo "::error file=$f::no section header"; exit 1; }
           done
           echo "systemd units OK"
+
+  # Data-logic invariant tests (tests/). These lock the invariants that the
+  # 2026-08-21 audit fixed — VNINDEX x1000 display, intraday breadth denominator =
+  # priced set, top-100 breadth scoping, the ICT date helper, the liquidity
+  # two-band screen + fail-safe, DNSE per-source scale — plus the freshness guard
+  # that fixed the 2.5-week T-1 stale-publish bug. Deps are minimal and touch no
+  # network at import; the vnstock-gated ingestion tests import-skip here and run
+  # locally instead. See docs/AUDIT_FIXES_2026-08.md section 11.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install minimal test deps (no vnstock / gcs / ssi)
+        run: pip install pandas numpy requests pytest
+
+      - name: Run data-logic invariant tests
+        run: pytest tests/ -q
