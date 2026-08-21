@@ -338,6 +338,45 @@ def save_ticker_to_cache(df: pd.DataFrame, cache_path: Path) -> None:
     df.to_csv(cache_path, index=False, encoding="utf-8-sig")
 
 
+def _fetch_dnse_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
+    """Fetch one ticker's daily OHLCV from the DNSE EntradeX chart-api.
+
+    DNSE is the primary daily source (2026-08-21): unlike SSI's `daily_ohlc`, it
+    carries no settlement lag, so the 15:15 EOD run gets today's bar for every
+    name (SSI's lag silently dropped same-day rows for DHC/DGW). Scale is applied
+    here to the pipeline's convention: stocks are already thousand-VND (x1), the
+    VNINDEX comes in raw points and is divided by 1000 to match combined_dataset's
+    thousand-points VNINDEX (volume stays raw shares). Returns a frame in the same
+    schema as `normalize_history_frame` (minus `source`, set by the caller), or
+    None when DNSE has no rows — the caller then falls back to SSI.
+    """
+    import dnse_client
+
+    raw = dnse_client.get_daily_ohlcv(
+        ticker, date.fromisoformat(start_date), date.fromisoformat(end_date)
+    )
+    if raw is None or raw.empty:
+        return None
+
+    scale = 0.001 if dnse_client.is_index(ticker) else 1.0
+    out = pd.DataFrame({
+        "time": pd.to_datetime(raw["time"]).dt.date,
+        "open": pd.to_numeric(raw["open"], errors="coerce") * scale,
+        "high": pd.to_numeric(raw["high"], errors="coerce") * scale,
+        "low": pd.to_numeric(raw["low"], errors="coerce") * scale,
+        "close": pd.to_numeric(raw["close"], errors="coerce") * scale,
+        "volume": pd.to_numeric(raw["volume"], errors="coerce"),
+    })
+    out = out.dropna(subset=["time", "close"])
+    out = _drop_degenerate_ohlc_rows(out, ticker)
+    out = out.sort_values("time").drop_duplicates("time", keep="last")
+    if out.empty:
+        return None
+    out["ticker"] = ticker
+    out["fetched_at"] = datetime.now(ICT).isoformat(timespec="seconds")
+    return out.reset_index(drop=True)
+
+
 def _fetch_ssi_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
     """Fetch one ticker's daily OHLCV from SSI FastConnect.
 
@@ -379,15 +418,28 @@ def fetch_with_failover(
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
-    """Fetch a ticker: SSI FastConnect primary, vnstock source failover fallback.
+    """Fetch a ticker: DNSE primary, SSI FastConnect + vnstock source fallbacks.
 
-    SSI replaced vnstock as the primary daily source on 2026-06-22 (vnstock's
-    live `price_board` began returning HTTP 403 from the cloud; `quote.history`
-    still works but is degrading). vnstock's `quote.history` is kept as a
-    fallback — it still works and, crucially, serves VNINDEX, which SSI's
-    security `daily_ohlc` endpoint does not return.
+    DNSE (EntradeX chart-api) became the primary daily source on 2026-08-21: it
+    carries no settlement lag, so the 15:15 EOD run gets today's bar for every
+    name — SSI's `daily_ohlc` settles ~10h after close and was silently dropping
+    same-day rows (DHC/DGW went blank in the RS heatmap). SSI stays as the second
+    source (it replaced vnstock as primary on 2026-06-22 when vnstock's live
+    `price_board` began 403'ing from the cloud); vnstock's `quote.history` is the
+    final fallback — it still works and serves VNINDEX. All three land in the same
+    thousand-VND scale, so the failover is transparent to downstream consumers.
     """
-    # --- SSI FastConnect first (self rate-limited inside ssi_client) ---------
+    # --- DNSE EntradeX chart-api first (primary; no settlement lag) -----------
+    try:
+        dnse_df = _fetch_dnse_daily(ticker, start_date, end_date)
+        if dnse_df is not None and not dnse_df.empty:
+            dnse_df["source"] = "DNSE"
+            return dnse_df
+        LOGGER.info("%s: DNSE returned no rows; falling back to SSI", ticker)
+    except Exception as exc:
+        LOGGER.warning("%s: DNSE daily fetch failed (%s); falling back to SSI", ticker, exc)
+
+    # --- SSI FastConnect second (self rate-limited inside ssi_client) --------
     try:
         ssi_df = _fetch_ssi_daily(ticker, start_date, end_date)
         if ssi_df is not None and not ssi_df.empty:

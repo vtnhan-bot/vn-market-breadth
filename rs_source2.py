@@ -242,6 +242,41 @@ def append_latest_candle_to_cache(ticker: str, candle_df: pd.DataFrame) -> pd.Da
     return combined_df
 
 
+def _fetch_dnse_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
+    """Daily OHLCV from the DNSE EntradeX chart-api in this module's schema.
+
+    DNSE is the primary daily source (2026-08-21) — no settlement lag, so the RS
+    universe scan sees today's bar for every name (SSI's `daily_ohlc` settles ~10h
+    after close). Stocks are already thousand-VND (x1); the VNINDEX comes in raw
+    points and is divided by 1000 to match the thousand-points convention (volume
+    stays raw shares). Returns None when DNSE has no rows so the caller falls back
+    to SSI. See dnse_client.py for the transport.
+    """
+    import dnse_client
+
+    raw = dnse_client.get_daily_ohlcv(
+        ticker, date.fromisoformat(start_date), date.fromisoformat(end_date)
+    )
+    if raw is None or raw.empty:
+        return None
+    scale = 0.001 if dnse_client.is_index(ticker) else 1.0
+    df = pd.DataFrame({
+        "time": pd.to_datetime(raw["time"]).dt.date,
+        "open": pd.to_numeric(raw["open"], errors="coerce") * scale,
+        "high": pd.to_numeric(raw["high"], errors="coerce") * scale,
+        "low": pd.to_numeric(raw["low"], errors="coerce") * scale,
+        "close": pd.to_numeric(raw["close"], errors="coerce") * scale,
+        "volume": pd.to_numeric(raw["volume"], errors="coerce"),
+    })
+    df = df.dropna(subset=["time", "close"])
+    df = _drop_degenerate_ohlc_rows(df, ticker)
+    df = df.sort_values("time").drop_duplicates("time", keep="last")
+    if df.empty:
+        return None
+    df["ticker"] = ticker
+    return df.reset_index(drop=True)
+
+
 def _fetch_ssi_daily(ticker: str, start_date: str, end_date: str) -> pd.DataFrame | None:
     """Daily OHLCV from SSI FastConnect in this module's normalized schema.
 
@@ -284,7 +319,17 @@ def fetch_history(
     if cached_df is not None and not cached_df.empty:
         return cached_df
 
-    # SSI FastConnect primary (vnstock quote.history fallback below).
+    # DNSE EntradeX chart-api primary (no settlement lag; SSI + vnstock fallbacks).
+    try:
+        dnse_df = _fetch_dnse_daily(ticker, start_date, end_date)
+        if dnse_df is not None and not dnse_df.empty:
+            save_history_cache(ticker, dnse_df)
+            logger.info("%s history cached via DNSE (%s rows)", ticker, len(dnse_df))
+            return dnse_df
+    except Exception as exc:
+        logger.warning("%s DNSE history failed (%s); falling back to SSI", ticker, exc)
+
+    # SSI FastConnect second (vnstock quote.history fallback below).
     try:
         ssi_df = _fetch_ssi_daily(ticker, start_date, end_date)
         if ssi_df is not None and not ssi_df.empty:
@@ -314,7 +359,16 @@ def fetch_history_direct(
     end_date: str,
     logger: logging.Logger,
 ) -> pd.DataFrame | None:
-    # SSI FastConnect primary (vnstock quote.history fallback below).
+    # DNSE EntradeX chart-api primary (no settlement lag; SSI + vnstock fallbacks).
+    try:
+        dnse_df = _fetch_dnse_daily(ticker, start_date, end_date)
+        if dnse_df is not None and not dnse_df.empty:
+            logger.info("%s direct DNSE history returned %s rows", ticker, len(dnse_df))
+            return dnse_df
+    except Exception as exc:
+        logger.warning("%s direct DNSE history failed (%s); falling back to SSI", ticker, exc)
+
+    # SSI FastConnect second (vnstock quote.history fallback below).
     try:
         ssi_df = _fetch_ssi_daily(ticker, start_date, end_date)
         if ssi_df is not None and not ssi_df.empty:

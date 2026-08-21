@@ -181,7 +181,40 @@ Since the universe was already curated to 194 liquid names, the screen is a **da
 0, AUDIT SUCCESS — verified live) that then auto-catches future drift. Adversarial QA passed (2 dormant gaps —
 coldstart over-exemption, fail-safe coordination — both fixed here). Rollback `.rollback-20260820-screen`.
 
-## 10. Open threads
+## 10. DNSE primary data-source switch (`dnse_client.py`, 2026-08-21)
+
+**Symptom:** DHC/DGW (and DGC/DIG/DPG) showed **blank cells for the current day** in the RS heatmap even
+though they had traded with volume. **Root cause:** not a code bug and not illiquidity (§8 was a different
+cause) — **SSI `daily_ohlc` settlement lag.** SSI settles the official daily bar ~10h after the 14:45 ICT
+close; the 15:15 EOD run fetched *before* settlement, so those names' newest bar was T‑1. (The overnight
+07:30 ICT post-US run then backfilled T, which is why the blanks "healed" by morning — masking the bug.)
+
+**Fix:** switch the pipeline's **primary daily source to the DNSE EntradeX chart-api**, which carries **no
+settlement lag** (serves T's daily bar minutes after close). New leaf `dnse_client.py` — a `requests`-based,
+**unauthenticated** client for `services.entrade.com.vn/chart-api/v2/ohlcs/{stock,index}` (the same OHLC DNSE
+serves via its signed OpenAPI, but reachable from the GCP VM with no key; verified reachable from
+us-central1). Wired as **primary → SSI → vnstock** in both daily-fetch paths:
+- `eod_batch_downloader.py` (`_fetch_dnse_daily` + `fetch_with_failover`) → `combined_dataset.csv` → RS
+  heatmap (`rs_matrix_3T`) + breadth. **This is where the blanks were.**
+- `rs_source2.py` (`_fetch_dnse_daily` + `fetch_history`/`fetch_history_direct`) → pre-breakout / RS universe.
+
+**Scale contract (critical, differs from SSI):** DNSE quotes **stocks in thousand-VND already** (DHC 36.55 →
+kept ×1, unlike SSI's raw-VND ÷1000), and **indices in raw points** (VNINDEX 1734.24 → **÷1000** to match
+combined_dataset's thousand-points convention, `market_breadth.py` 1.90 == 1,900). Volume is raw shares. The
+`dnse_client` transport returns DNSE-native scale; each module's `_fetch_dnse_daily` applies the scale
+(`is_index()` branch) — so the scale knowledge lives in one place per module, mirroring `_fetch_ssi_daily`.
+Empty window → `None` (fall to SSI); transport failure → raise (caught → fall to SSI); a 3× retry on
+transport blips keeps a transient hiccup from cascading to the laggy SSI. `source` label is informational
+only — **no consumer special-cases it** (grep-verified), so the swap is transparent downstream.
+
+**Deployed + verified** on the VM 2026-08-21 (md5-matched, `py_compile` OK, backups `.rollback-20260821-dnse`).
+On-VM smoke test: DHC/DGW/DGC/DIG/DPG/FPT/VNINDEX all fetch `source=DNSE` with the **08-20 bar present** and
+VNINDEX correctly ÷1000. Not committed to git yet at time of deploy → committed same session. First
+DNSE-sourced dashboard = the **15:15 ICT run on 2026-08-21** (a manual pre-close run would only reuse the SSI
+cache, so no forced run). Rollback: revert the two modules to `.rollback-20260821-dnse` (leftover
+`dnse_client.py` is then unimported/harmless).
+
+## 11. Open threads
 
 1. **R2 cutover — the only substantive open item.** Blocked on a Cloudflare account: needs Account ID +
    Access Key ID + Secret, then the `pub-*.r2.dev` URL. `r2_publish.py` + `run.sh`'s `r2pub` leg are in the
