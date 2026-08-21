@@ -201,7 +201,13 @@ def compute_breadth(combined_path: Path, top100: list[str], current_prices: dict
         sma = prices.rolling(period, min_periods=period).mean()
         latest_sma = sma.iloc[-1]  # SMA at T-1
 
-        n_total = int(latest_sma.notna().sum())
+        # Denominator = priced tickers ONLY. A top-100 name with a valid T-1 SMA
+        # but no live intraday price must contribute to NEITHER the numerator nor
+        # the denominator (see docstring), matching the EOD 'Đóng cửa' close tick
+        # where every counted name has a price. Counting it in n_total only (the
+        # old `latest_sma.notna().sum()`) understated the live line by the factor
+        # priced/total -- worst at the open before every name has printed a bar.
+        n_total = 0
         n_above = 0
         for ticker, sma_val in latest_sma.items():
             if pd.isna(sma_val):
@@ -209,6 +215,7 @@ def compute_breadth(combined_path: Path, top100: list[str], current_prices: dict
             px = current_prices.get(ticker)
             if px is None or pd.isna(px):
                 continue
+            n_total += 1
             if px > sma_val:
                 n_above += 1
         pct = round((n_above / n_total) * 100.0, 2) if n_total else None

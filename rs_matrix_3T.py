@@ -227,16 +227,24 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
     )
     if len(kept) < liquidity_screen.FAILSAFE_MIN_KEPT:
         # Something is wrong (e.g. a volume-feed regression). Keep the FULL universe
-        # AND write an all-kept membership so market_breadth + intraday also fall
-        # back to full this run -- otherwise they would screen against a stale prior
-        # members file and disagree with the (now-full) matrix.
+        # AND write an all-"failsafe" membership so market_breadth + intraday also
+        # fall back to full this run -- otherwise they would screen against a stale
+        # prior members file and disagree with the (now-full) matrix.
         LOGGER.error(
             "Liquidity screen kept only %s (< %s floor) -- FAILING SAFE to the full universe "
-            "this run (all-kept membership written).",
+            "this run (all-failsafe membership written).",
             len(kept), liquidity_screen.FAILSAFE_MIN_KEPT,
         )
+        # Mark rows "failsafe", NOT "kept": read_kept_members counts only
+        # kept/coldstart as members, so an all-"failsafe" file reads back as None
+        # -> the consumers (intraday_rs_3T, market_breadth) still fall back to the
+        # FULL universe this run (parity preserved, same as before), AND the NEXT
+        # run's prior_members is None so every name is re-judged by the strict
+        # ENTRY band. Writing "kept" here instead grandfathered every name into the
+        # loose KEEP band next run -- one transient glitch permanently re-admitted
+        # ENTRY/KEEP-gap illiquid names.
         failsafe_stats = screen_stats.copy()
-        failsafe_stats["status"] = "kept"
+        failsafe_stats["status"] = "failsafe"
         liquidity_screen.write_members(
             RS_SCREEN_MEMBERS_PATH, failsafe_stats, screened_at=str(session_dates[-1]),
         )

@@ -214,7 +214,44 @@ DNSE-sourced dashboard = the **15:15 ICT run on 2026-08-21** (a manual pre-close
 cache, so no forced run). Rollback: revert the two modules to `.rollback-20260821-dnse` (leftover
 `dnse_client.py` is then unimported/harmless).
 
-## 11. Open threads
+## 11. Whole-codebase data-logic audit + 5 fixes (commit pending, 2026-08-21)
+
+A 7-dimension adversarial audit (multi-agent: each finding refuted-by-default by an independent verifier;
+10 raw → **5 confirmed**, then each re-verified by hand). Verdict: **computations sound** (RS rating +
+EOD↔intraday parity, per-source scaling, ingestion sanity, VN-calendar/content freshness guards all PASS),
+defects were on **display / live-tick surfaces**. All 5 fixed in one commit, deployed + VM-verified (build_html
+render + compute_breadth against the live dataset, no publish; local unit tests + node for the JS). Rollback
+`.rollback-20260821-audit`.
+
+1. **[intraday_breadth.py:210] live breadth denominator counted unpriced tickers.** `n_total` was
+   `latest_sma.notna().sum()` (every SMA-valid top-100 name) while the numerator skipped names with no live SSI
+   price → `reported% = true% × priced/total`, worst at the open (e.g. 48% shown vs true ~80%), then a fake jump
+   to the correctly-denominated close tick. Contradicted the function's own docstring. **Fix:** count `n_total`
+   inside the price guard (numerator + denominator both over the priced set).
+2. **[market_breadth.py:1201-1208] VN-Index candlestick missing ×1000.** Built OHLC straight from
+   combined_dataset (thousand-points, ~1.9) while the ex-Vin panel right below ×1000'd to ~1900 → two adjacent
+   VNINDEX panels disagreeing 1000×. **Fix:** `(vni[col].astype(float) * 1000.0).round(2)`, mirroring the ex-Vin
+   chart. Presentational only. (VM render now shows 1730.0.)
+3. **[market_breadth.py:2581] breadth universe-count label used the full RS fetch universe.**
+   `generate_analysis(breadth, price_data)` set `n_tickers=len(price_data)` (~194–230) → self-contradictory
+   "N CP top-100". The mbz %s were always correct (computed over the top-100 subset). **Fix:** pass
+   `breadth_price_data` (used only for `len()`). VM render now shows 100.
+4. **[market_breadth.py:2354/2364] client-side ICT date helpers added `getTimezoneOffset()`.** `todayIsoIct` /
+   `todayDdMmIct` shifted the "today" by the viewer's own UTC offset → non-UTC viewers (and VN viewers before
+   07:00 ICT) got the wrong day, suppressing the live RS column. **Fail-safe** (never stale-as-fresh). **Fix:**
+   `new Date(now.getTime() + 7*3600000)` read via `getUTC*`.
+5. **[rs_matrix_3T.py:247] liquidity fail-safe leaked the ENTRY gate.** The `kept<FAILSAFE_MIN_KEPT` path wrote
+   every name `status="kept"`, so the next run judged the whole universe by the loose KEEP band → one transient
+   feed glitch permanently re-admitted ENTRY/KEEP-gap illiquid names. **Fix:** write `status="failsafe"` (outside
+   `read_kept_members`'s `{kept,coldstart}`) → the all-failsafe file reads back **None**, so consumers still
+   fall back to full THIS run (parity preserved, identical to before) AND next run's `prior_members=None` re-applies
+   the strict ENTRY band. Rare trigger, bounded leak — now closed.
+
+**Meta-finding (unfixed, highest-leverage):** the repo has **zero automated tests** for any of this data logic —
+every invariant is enforced only by inline code + comments. A golden-fixture suite would have caught all 5 of
+these AND the prior 2.5-week T‑1 stale bug.
+
+## 12. Open threads
 
 1. **R2 cutover — the only substantive open item.** Blocked on a Cloudflare account: needs Account ID +
    Access Key ID + Secret, then the `pub-*.r2.dev` URL. `r2_publish.py` + `run.sh`'s `r2pub` leg are in the

@@ -1195,13 +1195,17 @@ def build_html(
         vni["time"] = pd.to_datetime(vni["time"])
         vni = vni[vni["time"] >= breadth.index[0]].tail(SESSIONS_SHOW)
         vni_dates = [d.strftime("%d-%m-%Y") for d in vni["time"]]
+        # Multiply by 1000 to render in real points (combined_dataset stores
+        # VNINDEX in thousand-points, e.g. 1.90 = 1,900) -- matches the ex-Vin
+        # chart below (line ~1232) and the 'Điểm' (points) y-axis. Without this
+        # the flagship candlestick plotted ~1.9 while the ex-Vin panel showed ~1900.
         candle = {
             "type": "candlestick",
             "x": vni_dates,
-            "open":  vni["open"].round(2).tolist(),
-            "high":  vni["high"].round(2).tolist(),
-            "low":   vni["low"].round(2).tolist(),
-            "close": vni["close"].round(2).tolist(),
+            "open":  (vni["open"].astype(float) * 1000.0).round(2).tolist(),
+            "high":  (vni["high"].astype(float) * 1000.0).round(2).tolist(),
+            "low":   (vni["low"].astype(float) * 1000.0).round(2).tolist(),
+            "close": (vni["close"].astype(float) * 1000.0).round(2).tolist(),
             "name": "VNINDEX",
             "increasing": {"line": {"color": "#43A047"}, "fillcolor": "#43A047"},
             "decreasing": {"line": {"color": "#E53935"}, "fillcolor": "#E53935"},
@@ -2349,9 +2353,10 @@ function rsChangeClass(pct) {{
 
 function todayIsoIct() {{
   const now = new Date();
-  // Build YYYY-MM-DD in Asia/Ho_Chi_Minh (UTC+7).
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
-  const ict = new Date(utcMs + 7 * 3600000);
+  // Build YYYY-MM-DD in Asia/Ho_Chi_Minh (UTC+7). now.getTime() is already an
+  // absolute UTC epoch, so ONLY +7h is needed; the old getTimezoneOffset() term
+  // shifted the result by the viewer's own offset (wrong for any non-UTC viewer).
+  const ict = new Date(now.getTime() + 7 * 3600000);
   const y = ict.getUTCFullYear();
   const m = String(ict.getUTCMonth() + 1).padStart(2, '0');
   const d = String(ict.getUTCDate()).padStart(2, '0');
@@ -2360,8 +2365,7 @@ function todayIsoIct() {{
 
 function todayDdMmIct() {{
   const now = new Date();
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
-  const ict = new Date(utcMs + 7 * 3600000);
+  const ict = new Date(now.getTime() + 7 * 3600000);  // ICT via UTC epoch + 7h
   const d = String(ict.getUTCDate()).padStart(2, '0');
   const m = String(ict.getUTCMonth() + 1).padStart(2, '0');
   return d + '-' + m;
@@ -2571,7 +2575,10 @@ def main():
         log(f"Breadth matrix: {breadth.shape[0]} sessions x {breadth.shape[1]} indicators")
 
         log("Generating analysis ...")
-        analysis = generate_analysis(breadth, price_data)
+        # n_tickers must reflect the top-100 breadth cohort, not the ~230-name RS
+        # fetch universe -- pass breadth_price_data (generate_analysis uses its
+        # second arg only for len()); else the page printed "230 CP top-100".
+        analysis = generate_analysis(breadth, breadth_price_data)
         log(f"Composite score: {analysis['composite']} | {analysis['verdict']}")
         log("Zero-refetch policy active: using VN-Index data from combined_dataset.csv")
         if vnindex_df is not None and not vnindex_df.empty:
