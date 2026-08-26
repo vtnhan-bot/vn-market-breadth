@@ -329,8 +329,19 @@ def update_intraday_json_on_gcs(now_ict: datetime, breadth: dict, eod_history: l
     blob.cache_control = "no-cache, must-revalidate"  # not no-store: allow 304 revalidation
     blob.upload_from_string(body, content_type="application/json")
 
-    import r2_publish
-    r2_publish.put_bytes(GCS_INTRADAY_KEY, body, "application/json")
+    # R2 mirror leg — SUPPLEMENTARY and best-effort: the GCS publish above is the
+    # source of truth. It must NEVER break the tick. This was previously UNCAUGHT,
+    # so a missing r2_publish.py (not deployed pre-R2-cutover) raised
+    # ModuleNotFoundError here and crashed the whole intraday tick with exit 1 --
+    # AFTER the breadth publish but BEFORE the RS step ran -- which silently froze
+    # intraday_rs_3T.json (the live RS column) from 2026-08-14. Now guarded to
+    # match the r2 legs in intraday_rs_3T.publish_intraday_rs and
+    # market_breadth.refresh_intraday_breadth_json.
+    try:
+        import r2_publish
+        r2_publish.put_bytes(GCS_INTRADAY_KEY, body, "application/json")
+    except Exception as exc:
+        LOGGER.warning("R2 mirror leg skipped (non-fatal): %s", exc)
 
     return existing
 
