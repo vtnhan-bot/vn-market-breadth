@@ -34,6 +34,19 @@ RS_MATRIX_3T_PATH = SCRIPT_DIR / "rs_matrix_3T.csv"
 # intraday_rs_3T (parity) and market_breadth (alignment audit). See liquidity_screen.
 RS_SCREEN_MEMBERS_PATH = SCRIPT_DIR / "rs_screen_members.csv"
 
+# Corporate-action ex-date detection — MUST stay in sync with intraday_rs_3T's
+# EXCHANGE_DAILY_LIMIT so the same-day EOD column and the live intraday column
+# ex-adjust IDENTICALLY (EOD<->intraday parity). On an ex-date the exchange resets
+# the reference price, so combined_dataset's latest bar opens far from the prior
+# close; until DNSE back-adjusts the history (a lag of up to ~a day) the momentum/
+# return and daily_change_pct would compare the post-ex close against unadjusted
+# prior closes -> a phantom gap (AGG 2026-09-04). Detect via the latest session's
+# OPEN gapping beyond the ticker's exchange limit, then ex-adjust the pre-session
+# closes by open/prior_close for that session only. Self-heals once DNSE adjusts.
+EXCHANGE_DAILY_LIMIT = {"HOSE": 0.07, "HNX": 0.10, "UPCOM": 0.15}
+EXCHANGE_RESET_MARGIN = 0.005  # slack above the limit for tick-size rounding
+_DEFAULT_EXCHANGE = "HOSE"
+
 LOGGER = configure_logging("rs_matrix_3t")
 
 
@@ -276,17 +289,61 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
             continue
 
         symbol_dates = set(history_df["time"].dropna().tolist())
+
+        # Corporate-action ex-date reset on the LATEST session (see EXCHANGE_DAILY_LIMIT):
+        # if today's OPEN gaps beyond this ticker's exchange limit from the prior close,
+        # ex-adjust the pre-session closes by open/prior_close for THAT session's rating +
+        # daily change (mirrors intraday_rs_3T; historical columns/rows are untouched).
+        latest_session = session_dates[-1]
+        reset_factor = None
+        reset_daily_change = None
+        lr = history_df[history_df["time"] == latest_session]
+        if not lr.empty and "open" in history_df.columns:
+            ex_open = pd.to_numeric(lr.iloc[-1]["open"], errors="coerce")
+            ex_close = pd.to_numeric(lr.iloc[-1]["close"], errors="coerce")
+            prior = history_df[history_df["time"] < latest_session]
+            prior_close = (
+                pd.to_numeric(prior.iloc[-1]["close"], errors="coerce")
+                if not prior.empty else np.nan
+            )
+            if pd.notna(ex_open) and ex_open > 0 and pd.notna(prior_close) and prior_close > 0:
+                gap = abs(ex_open / prior_close - 1.0)
+                exch = str(getattr(universe_row, "exchange", "") or "").upper()
+                limit = EXCHANGE_DAILY_LIMIT.get(
+                    exch, EXCHANGE_DAILY_LIMIT[_DEFAULT_EXCHANGE]
+                ) + EXCHANGE_RESET_MARGIN
+                if gap > limit:
+                    reset_factor = ex_open / prior_close
+                    if pd.notna(ex_close) and ex_close > 0:
+                        reset_daily_change = (ex_close / ex_open - 1.0) * 100.0
+                    LOGGER.info(
+                        "EOD ex-date reset %s @ %s: open %.4f vs prior close %.4f "
+                        "(gap %.1f%% > %.1f%% %s) -> ex-adjust history x%.4f",
+                        ticker, latest_session, ex_open, prior_close, gap * 100,
+                        limit * 100, exch or _DEFAULT_EXCHANGE, reset_factor,
+                    )
+
         for session_date in session_dates:
             if session_date not in symbol_dates:
                 continue
 
-            stock_return = calculate_return_90d(history_df, session_date)
+            # On the reset session, compute the rating against ex-adjusted pre-session
+            # closes; other sessions (and stored close values) use the raw history.
+            calc_df = history_df
+            if reset_factor is not None and session_date == latest_session:
+                calc_df = history_df.copy()
+                m = calc_df["time"] < latest_session
+                calc_df.loc[m, "close"] = (
+                    pd.to_numeric(calc_df.loc[m, "close"], errors="coerce") * reset_factor
+                )
+
+            stock_return = calculate_return_90d(calc_df, session_date)
             index_return = benchmark_returns.get(session_date, np.nan)
             if pd.isna(stock_return) or pd.isna(index_return):
                 continue
 
             session_row = history_df[history_df["time"] == session_date].iloc[-1]
-            weighted_momentum_score = calculate_weighted_momentum_score(history_df, session_date)
+            weighted_momentum_score = calculate_weighted_momentum_score(calc_df, session_date)
             all_rows.append(
                 {
                     "ticker": ticker,
@@ -297,8 +354,11 @@ def build_rs_matrix(universe_df: pd.DataFrame, combined_path: Path) -> pd.DataFr
                     "universe_order": getattr(universe_row, "universe_order", np.nan),
                     "session_date": session_date,
                     "close": pd.to_numeric(session_row["close"], errors="coerce"),
-                    "daily_change_pct": pd.to_numeric(
-                        session_row["daily_change_pct"], errors="coerce"
+                    "daily_change_pct": (
+                        reset_daily_change
+                        if (reset_factor is not None and session_date == latest_session
+                            and reset_daily_change is not None)
+                        else pd.to_numeric(session_row["daily_change_pct"], errors="coerce")
                     ),
                     "weighted_momentum_score": weighted_momentum_score,
                     "stock_return_90d": stock_return,
