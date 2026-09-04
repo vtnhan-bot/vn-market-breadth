@@ -298,6 +298,44 @@ class SSIClient:
         LOGGER.info("SSI current prices: %d/%d tickers", len(out), n)
         return out
 
+    # -- session open + current price (for ex-date reference-reset detection) --
+    def get_open_and_current(
+        self, tickers: list[str], trade_date: Optional[date] = None
+    ) -> dict[str, tuple[float, float]]:
+        """Return {TICKER_UPPER: (session_open, last_price)} in thousand-VND.
+
+        Same one-REST-call-per-ticker cost as get_current_prices (both read the
+        day's 1-minute bars); this variant additionally keeps the FIRST bar's open
+        so the intraday RS can detect a corporate-action reference reset (an open
+        that gaps beyond the exchange's daily limit from the prior close). Symbols
+        with no bar / any per-symbol error are skipped, never fatal.
+        """
+        if trade_date is None:
+            trade_date = datetime.now(ICT).date()
+        out: dict[str, tuple[float, float]] = {}
+        n = len(tickers)
+        for i, ticker in enumerate(tickers, start=1):
+            sym = str(ticker).upper().strip()
+            if not sym:
+                continue
+            try:
+                df = self.get_intraday_bars(sym, trade_date, resolution_minutes=1)
+            except Exception as exc:
+                LOGGER.warning("SSI open+current failed for %s (%d/%d): %s", sym, i, n, exc)
+                continue
+            if df is None or df.empty:
+                continue
+            o = pd.to_numeric(df["open"], errors="coerce").dropna()
+            c = pd.to_numeric(df["close"], errors="coerce").dropna()
+            if o.empty or c.empty:
+                continue
+            op, last = float(o.iloc[0]), float(c.iloc[-1])
+            if op <= 0 or last <= 0:
+                continue
+            out[sym] = (op / PRICE_DIVISOR, last / PRICE_DIVISOR)
+        LOGGER.info("SSI open+current: %d/%d tickers", len(out), n)
+        return out
+
     # -- daily OHLCV (EOD / RS reuse) ----------------------------------------
     def get_daily_ohlcv(self, symbol: str, start: date, end: date) -> pd.DataFrame:
         """Daily OHLCV for `symbol` over [start, end] inclusive, ascending by ts.
@@ -372,6 +410,13 @@ def get_current_prices(
 ) -> dict[str, float]:
     """{TICKER_UPPER: last_price_in_thousand_VND}. See SSIClient.get_current_prices."""
     return _client().get_current_prices(tickers, trade_date)
+
+
+def get_open_and_current(
+    tickers: list[str], trade_date: Optional[date] = None
+) -> dict[str, tuple[float, float]]:
+    """{TICKER_UPPER: (session_open, last_price)} in thousand-VND. See SSIClient.get_open_and_current."""
+    return _client().get_open_and_current(tickers, trade_date)
 
 
 def get_daily_ohlcv(symbol: str, start: date, end: date) -> pd.DataFrame:

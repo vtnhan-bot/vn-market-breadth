@@ -61,6 +61,20 @@ RS_LOOKBACK_CALENDAR_DAYS = 45
 RS_MOMENTUM_WINDOWS = ((3, 0.50), (5, 0.30), (10, 0.20))
 RS_BLEND_RS_WEIGHT = 0.20
 
+# Corporate-action ex-date detection. On an ex-dividend/-bonus/-rights date the
+# exchange RESETS the reference price, so the stock legitimately opens far from the
+# prior close. daily_change_pct and the RS momentum/return would otherwise compare
+# the post-ex live price against UNADJUSTED prior closes and report a phantom gap
+# (AGG 2026-09-04: opened 10.85 vs prior close 11.90 = -8.8%, impossible on HOSE's
+# ±7% band -> published -10.08% when the real move was -1.39%). Detect the reset by
+# the OPEN gapping beyond the ticker's exchange daily limit (+ a tick-rounding
+# margin), then ex-adjust that ticker's history by the open-implied factor so the
+# whole cell is on one consistent post-ex basis. Self-heals at EOD once DNSE
+# back-adjusts history; only the ex-date's own live session is affected.
+EXCHANGE_DAILY_LIMIT = {"HOSE": 0.07, "HNX": 0.10, "UPCOM": 0.15}
+EXCHANGE_RESET_MARGIN = 0.005  # slack above the limit for tick-size rounding
+_DEFAULT_EXCHANGE = "HOSE"
+
 LOGGER = logging.getLogger("intraday_rs_3T")
 
 
@@ -102,19 +116,39 @@ def _load_history_frame(combined_path: Path, tickers: list[str]) -> pd.DataFrame
     return df[["ticker", "time", "close"]].sort_values(["ticker", "time"]).reset_index(drop=True)
 
 
-def _fetch_intraday_prices(tickers: list[str]) -> dict[str, float]:
-    """Current intraday price per ticker via SSI FastConnect (thousand VND).
+def _load_exchange_map() -> dict[str, str]:
+    """{TICKER_UPPER: exchange} from rs_fixed_tickers.csv, for ex-date detection.
+
+    Fail-safe: returns {} on any error / missing column, so callers default to
+    HOSE's ±7% band rather than crashing the tick.
+    """
+    try:
+        df = pd.read_csv(RS_UNIVERSE_PATH, encoding="utf-8-sig")
+        if "ticker" not in df.columns or "exchange" not in df.columns:
+            return {}
+        out: dict[str, str] = {}
+        for t, x in zip(df["ticker"], df["exchange"]):
+            if pd.notna(t) and pd.notna(x):
+                out[str(t).strip().upper()] = str(x).strip().upper()
+        return out
+    except Exception:
+        return {}
+
+
+def _fetch_intraday_prices(tickers: list[str]) -> dict[str, tuple[float, float]]:
+    """Session open + current price per ticker via SSI FastConnect (thousand VND).
 
     Replaces the old vnstock `Trading.price_board()` path (started 403'ing
     2026-06-22). SSI has no batch price board, so this makes ~one REST call per
-    ticker, rate-limited inside ssi_client (~1 req/s). Returns the SAME
-    'thousand VND' scale as before — {TICKER_UPPER: price} — since ssi_client
-    applies the /1000 divisor. price_board's `ref_price` is no longer available
-    here; daily_change_pct now derives its reference from the prior-session EOD
-    close in combined_dataset (see `_ref_close_from_history`).
+    ticker, rate-limited inside ssi_client (~1 req/s). Returns
+    {TICKER_UPPER: (session_open, current_price)} at the 'thousand VND' scale
+    (ssi_client applies /1000). The open lets compute_intraday_rs detect a
+    corporate-action reference reset (ex-date); price_board's `ref_price` is no
+    longer available, so daily_change_pct derives its reference from the
+    prior-session EOD close (see `_ref_close_from_history`), ex-adjusted on a reset.
     """
-    from ssi_client import get_current_prices
-    return get_current_prices(tickers)
+    from ssi_client import get_open_and_current
+    return get_open_and_current(tickers)
 
 
 def _ref_close_from_history(history: pd.DataFrame, today: "datetime.date") -> float:
@@ -208,16 +242,44 @@ def compute_intraday_rs(combined_path: Path, now_ict: datetime) -> dict | None:
         return None
 
     today = now_ict.date()
+    exch_map = _load_exchange_map()
     rows = []
     for ticker in tickers:
         hist = history_by_ticker.get(ticker)
         if hist is None or hist.empty:
             continue
-        intraday_px = prices.get(ticker)
+        quote = prices.get(ticker)
+        if not quote:
+            continue
+        session_open, intraday_px = quote
         if intraday_px is None or pd.isna(intraday_px) or intraday_px <= 0:
             continue
-        ref_px = _ref_close_from_history(hist, today)
 
+        # Corporate-action ex-date: if today's OPEN gaps beyond this ticker's
+        # exchange daily limit from the prior close, the reference was RESET, so
+        # ex-adjust the whole history by the open-implied factor. Everything below
+        # (ref, 90d return, momentum, daily change) then computes on one consistent
+        # post-ex basis. See EXCHANGE_DAILY_LIMIT.
+        prior_close = _ref_close_from_history(hist, today)
+        if (session_open is not None and pd.notna(session_open) and session_open > 0
+                and pd.notna(prior_close) and prior_close > 0):
+            gap = abs(session_open / prior_close - 1.0)
+            limit = EXCHANGE_DAILY_LIMIT.get(
+                exch_map.get(ticker, _DEFAULT_EXCHANGE),
+                EXCHANGE_DAILY_LIMIT[_DEFAULT_EXCHANGE],
+            ) + EXCHANGE_RESET_MARGIN
+            if gap > limit:
+                factor = session_open / prior_close
+                hist = hist.copy()
+                hist["close"] = pd.to_numeric(hist["close"], errors="coerce") * factor
+                LOGGER.info(
+                    "Ex-date reset %s: open %.4f vs prior close %.4f (gap %.1f%% > %.1f%% %s) "
+                    "-> ex-adjust history x%.4f",
+                    ticker, session_open, prior_close, gap * 100, limit * 100,
+                    exch_map.get(ticker, _DEFAULT_EXCHANGE), factor,
+                )
+
+        ref_px = _ref_close_from_history(hist, today)
         stock_ret_90d = _compute_return_90d(hist, intraday_px, today)
         wm_score = _compute_weighted_momentum(hist, intraday_px, today)
         # Match EOD (rs_matrix_3T) exactly: drop the row only when the stock
