@@ -1659,7 +1659,7 @@ def build_html(
       font-weight: 700;
       padding: 6px 12px;
     }}
-    #chart {{
+    #chart, #intraday-chart {{
       background: #fff8f0;
       border: 1px solid #e0d8cc;
       border-radius: 8px;
@@ -1953,16 +1953,11 @@ def build_html(
   <div id="chart"></div>
   {breadth_latest_label}
 
-  <div class="panel" style="background:#fff;border:1px solid #e0d8cc;">
-    <h2>📡 Độ rộng 50 phiên + intraday <span class="tag">Cập nhật mỗi 15 phút</span></h2>
-    <div id="intraday-status" style="font-size:0.85rem;color:#666;margin-bottom:8px">
-      <span id="intraday-update-time">Đang tải...</span>
-      <span id="intraday-tick-count" style="margin-left:12px;color:#888"></span>
-    </div>
-    <div id="intraday-chart" style="min-height:340px"></div>
-    <div style="font-size:0.78rem;color:#888;margin-top:6px;font-style:italic">
-      50 phiên đóng cửa gần nhất (theo ngày DD-MM) + tick intraday hôm nay (HH:MM, giờ Việt Nam). Phiên giao dịch: sáng 09:30–11:30, chiều 13:00–14:45.
-    </div>
+  <div id="intraday-chart" style="min-height:624px"></div>
+  <div id="intraday-status" class="data-as-of">
+    <span id="intraday-update-time">Đang tải...</span>
+    <span id="intraday-tick-count" style="margin-left:12px"></span><br>
+    Cập nhật mỗi 15 phút: 49 phiên đóng cửa gần nhất (DD-MM-YYYY) + tick intraday hôm nay (HH:MM, giờ Việt Nam). Phiên giao dịch: sáng 09:30–11:30, chiều 13:00–14:45.
   </div>
 
   <div id="vnindex-chart" style="background:#fff8f0;border:1px solid #e0d8cc;border-radius:8px;padding:10px;margin-bottom:6px"></div>
@@ -2051,28 +2046,33 @@ def build_html(
 
 <script>
 const traces = {chart_data};
-const layout = {{
-  title: {{ text: 'Cơ hội - 50 phiên', font: {{ color: '#c0392b', size: 18 }} }},
-  paper_bgcolor: '#fff8f0',
-  plot_bgcolor: '#fff8f0',
-  xaxis: {{
-    type: 'category',
-    tickangle: -45,
-    tickfont: {{ size: 10 }},
-    gridcolor: '#ead8c0',
-    showgrid: true,
-  }},
-  yaxis: {{
-    range: [0, 105],
-    ticksuffix: '%',
-    gridcolor: '#ead8c0',
-    showgrid: true,
-  }},
-  legend: {{ orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' }},
-  hovermode: 'x unified',
-  margin: {{ l: 50, r: 80, t: 60, b: 120 }},
-  height: 624,
-}};
+// Shared by the EOD and intraday breadth charts so the two stay visually identical.
+// Returns a fresh object each call: Plotly mutates the layout it is given.
+function breadthLayout(titleText) {{
+  return {{
+    title: {{ text: titleText, font: {{ color: '#c0392b', size: 18 }} }},
+    paper_bgcolor: '#fff8f0',
+    plot_bgcolor: '#fff8f0',
+    xaxis: {{
+      type: 'category',
+      tickangle: -45,
+      tickfont: {{ size: 10 }},
+      gridcolor: '#ead8c0',
+      showgrid: true,
+    }},
+    yaxis: {{
+      range: [0, 105],
+      ticksuffix: '%',
+      gridcolor: '#ead8c0',
+      showgrid: true,
+    }},
+    legend: {{ orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' }},
+    hovermode: 'x unified',
+    margin: {{ l: 50, r: 80, t: 60, b: 120 }},
+    height: 624,
+  }};
+}}
+const layout = breadthLayout('Cơ hội - 50 phiên');
 const config = {{ responsive: true, displayModeBar: true }};
 Plotly.newPlot('chart', traces, layout, config);
 
@@ -2299,7 +2299,10 @@ function renderIntradayBreadth(doc) {{
   status.textContent = 'Cập nhật lúc ' + lastUpdated + ' (giờ Việt Nam, ngày ' + doc.date + ')';
   tickEl.textContent = eodHistory.length + ' phiên EOD + ' + (latestUpdate ? '1 điểm intraday (' + latestUpdate.time + ')' : 'chưa có intraday');
 
-  const x = allPoints.map(u => u.time);
+  // EOD points get the EOD chart's DD-MM-YYYY labels (from the ISO date); the
+  // latest tick keeps its HH:MM / 'Đóng cửa' label.
+  const x = eodHistory.map(u => u.date ? u.date.split('-').reverse().join('-') : u.time)
+    .concat(latestUpdate ? [latestUpdate.time] : []);
   // Match EOD chart styling exactly: same colors, dotted lines for mbz3/mbz5,
   // wider line for mbz50, marker color matches line, no gap-bridging.
   const maKey = (p) => 'mbz' + (p < 100 ? String(p).padStart(2, '0') : p);
@@ -2317,16 +2320,10 @@ function renderIntradayBreadth(doc) {{
       connectgaps: false,
     }};
   }});
-  const layout = {{
-    margin: {{t: 24, l: 48, r: 24, b: 36}},
-    xaxis: {{type: 'category', title: 'Phiên / Giờ Việt Nam', tickangle: -45, automargin: true, tickfont: {{size: 9}}}},
-    yaxis: {{title: '% trên SMA', range: [0, 100], ticksuffix: '%'}},
-    legend: {{orientation: 'h', y: -0.18}},
-    paper_bgcolor: '#fff',
-    plot_bgcolor: '#fafafa',
-    height: 320,
-  }};
-  Plotly.react('intraday-chart', traces, layout, {{displayModeBar: false}});
+  const intradayLayout = breadthLayout('Cơ hội - 50 phiên + intraday');
+  // Keep the viewer's zoom/pan across the 60s re-render.
+  intradayLayout.uirevision = 'intraday';
+  Plotly.react('intraday-chart', traces, intradayLayout, config);
 }}
 
 async function pollIntraday() {{

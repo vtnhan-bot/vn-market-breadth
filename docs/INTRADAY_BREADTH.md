@@ -8,17 +8,17 @@ A live breadth chart that updates every 15 minutes during VN trading hours, disp
 ## What you see on the chart
 
 **X axis** — categorical strings, never date-parsed (Plotly `type: 'category'`):
-- Left: 49 EOD daily labels in `DD-MM` format (e.g. `24-02`, `25-02`, …, `06-05` if T = today is 07-05).
+- Left: 49 EOD daily labels in `DD-MM-YYYY` format, same as the EOD chart (e.g. `24-02-2026`, …, `06-05-2026` if T = today is 07-05). Built client-side from each entry's ISO `date`; the JSON's short `time` (`DD-MM`) is only a fallback.
 - Right: 1 "latest tick" label whose value depends on time of day:
   - **`HH:MM` ICT** during the VN session (09:30, 09:45, …, 14:30) — the in-progress intraday tick written by `intraday-breadth-job`.
   - **`Đóng cửa`** outside the session (after the 15:15 ICT EOD run, throughout the overnight gap, and until the next 09:00 ICT tick rolls the day forward) — a synthetic close tick written by `market_breadth.py:refresh_intraday_breadth_json()` carrying today's EOD breadth values. Added in commit `39c68f2` to avoid the chart showing yesterday's stale `14:30` tick at 08:00 the next morning.
 
-**Y axis** — `% trên SMA`, range 0–100, `%` suffix.
+**Layout** — identical to the EOD chart (same container box, 624 px height, colors, grid, legend, unified hover): both use `breadthLayout()` in `market_breadth.py`. Y axis range 0–105, `%` suffix.
 
 **Lines** — same colors and dash pattern as the EOD chart, six MA periods:
 - mbz03 cyan dotted • mbz05 orange dotted • mbz10 green solid • mbz20 purple solid • **mbz50 black bold (width 4)** • mbz200 red solid.
 
-**Status text above the chart** — "Cập nhật lúc HH:MM DD/MM/YYYY (giờ Việt Nam, ngày YYYY-MM-DD)" + "49 phiên EOD + 1 điểm intraday (HH:MM)".
+**Status text below the chart** — "Cập nhật lúc HH:MM DD/MM/YYYY (giờ Việt Nam, ngày YYYY-MM-DD)" + "49 phiên EOD + 1 điểm intraday (HH:MM)".
 
 ## Data contract
 
